@@ -18,7 +18,15 @@
     },
     {
       "name": "page_background",
-      "value": "#F0F2F5"
+      "value": "#F3F5F8"
+    },
+    {
+      "name": "post_metadata",
+      "value": "#666E7A"
+    },
+    {
+      "name": "android_post_background",
+      "value": "#FFFFFF"
     },
     {
       "name": "card_background",
@@ -26,7 +34,7 @@
     },
     {
       "name": "input_background",
-      "value": "#EEF0F4"
+      "value": "#F1F3F6"
     },
     {
       "name": "text_primary",
@@ -34,15 +42,15 @@
     },
     {
       "name": "text_secondary",
-      "value": "#996E7280"
+      "value": "#5C6370"
     },
     {
       "name": "text_caption",
-      "value": "#4D9AA0AA"
+      "value": "#8A919F"
     },
     {
       "name": "divider",
-      "value": "#E8EAED"
+      "value": "#EBEEF2"
     },
     {
       "name": "error",

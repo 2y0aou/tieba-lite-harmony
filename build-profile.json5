@@ -1,38 +1,8 @@
 {
   "app": {
-    "signingConfigs": [
-      {
-        "name": "default",
-        "type": "HarmonyOS",
-        "material": {
-          "certpath": "C:\\Users\\ax463\\.ohos\\config\\default_tieba-harmony_CzS2iwuYE9BFbbKBFL4ABTIuLlxAaOzmoBds48s8zQA=.cer",
-          "keyAlias": "debugKey",
-          "keyPassword": "0000001BABEE1FCAAE1AABD802CCE9CF99E0E56F80570B6FCD02833FB3C053E68DD3EE540E2D171F4DD274",
-          "profile": "C:\\Users\\ax463\\.ohos\\config\\default_tieba-harmony_CzS2iwuYE9BFbbKBFL4ABTIuLlxAaOzmoBds48s8zQA=.p7b",
-          "signAlg": "SHA256withECDSA",
-          "storeFile": "C:\\Users\\ax463\\.ohos\\config\\default_tieba-harmony_CzS2iwuYE9BFbbKBFL4ABTIuLlxAaOzmoBds48s8zQA=.p12",
-          "storePassword": "0000001B40E567616D3C4360CA4FE9F72557B22393C9CA63F1B35F28099409D34EB0691EF3712B97A76D31"
-        }
-      },
-      {
-        "name": "debug_acl",
-        "type": "HarmonyOS",
-        "material": {
-          "certpath": "C:\\Users\\ax463\\.ohos\\config\\default_tieba-harmony_CzS2iwuYE9BFbbKBFL4ABTIuLlxAaOzmoBds48s8zQA=.cer",
-          "keyAlias": "debugKey",
-          "keyPassword": "0000001BABEE1FCAAE1AABD802CCE9CF99E0E56F80570B6FCD02833FB3C053E68DD3EE540E2D171F4DD274",
-          "profile": "C:\\Users\\ax463\\.ohos\\config\\隐私测试Debug.p7b",
-          "signAlg": "SHA256withECDSA",
-          "storeFile": "C:\\Users\\ax463\\.ohos\\config\\default_tieba-harmony_CzS2iwuYE9BFbbKBFL4ABTIuLlxAaOzmoBds48s8zQA=.p12",
-          "storePassword": "0000001B40E567616D3C4360CA4FE9F72557B22393C9CA63F1B35F28099409D34EB0691EF3712B97A76D31"
-        }
-      }
-    ],
     "products": [
       {
         "name": "default",
-        "signingConfig": "default",
-        // #API26 目标 API 升级到 26.0.0（HarmonyOS 7），最低支持版本保持 6.1.0(23)，老设备仍可运行
         "targetSdkVersion": "26.0.0",
         "compatibleSdkVersion": "6.1.0(23)",
         "runtimeOS": "HarmonyOS",
@@ -45,8 +15,6 @@
       },
       {
         "name": "debug_acl",
-        "signingConfig": "debug_acl",
-        // #API26 目标 API 升级到 26.0.0（HarmonyOS 7），最低支持版本保持 6.1.0(23)
         "targetSdkVersion": "26.0.0",
         "compatibleSdkVersion": "6.1.0(23)",
         "runtimeOS": "HarmonyOS",
@@ -60,7 +28,7 @@
     ],
     "buildModeSet": [
       {
-        "name": "debug",
+        "name": "debug"
       },
       {
         "name": "release"

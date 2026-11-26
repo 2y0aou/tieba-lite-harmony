@@ -23,6 +23,8 @@ import { CircleShape } from '@kit.ArkUI';
 //     Android 端该模式叫 SETTINGS_SMART_LOAD，needReverse 在 SMART_LOAD + WiFi 下返回 true
 //     （用更高质量小图），但仍是小图非原图
 
+import { isGifImageUrl } from './MediaAnimation';
+
 /** 图片加载模式：智能原图（默认，WiFi 原图/移动网络小图） */
 export const IMAGE_LOAD_SMART_ORIGIN: number = 0;
 /** 图片加载模式：智能无图（移动网络不加载，WiFi 加载小图） */
@@ -96,19 +98,24 @@ export function shouldLoadOrigin(imageLoadType: number, isWifi: boolean): boolea
  * @param url 原图 URL
  * @param imageLoadType 图片加载模式（0/1/2/3）
  * @param isWifi 当前是否 WiFi 网络
+ * @param animatedUrl 服务端提供的动图地址
  * @returns 图片 URL；shouldLoad=false 时返回空字符串（Image 组件显示 alt 占位图）
  */
 export function getMediaImageUrl(
   thumbnail: string,
   url: string,
   imageLoadType: number,
-  isWifi: boolean
+  isWifi: boolean,
+  animatedUrl: string = ''
 ): string {
   if (!shouldLoad(imageLoadType, isWifi)) {
     return '';
   }
-  if (shouldLoadOrigin(imageLoadType, isWifi)) {
-    return url;
+  if (animatedUrl.length > 0) {
+    return animatedUrl;
+  }
+  if (isGifImageUrl(url) || shouldLoadOrigin(imageLoadType, isWifi)) {
+    return url.length > 0 ? url : thumbnail;
   }
   return thumbnail.length > 0 ? thumbnail : url;
 }
@@ -241,16 +248,17 @@ export function PostMediaImage(
   imageLoadType: number,
   isWifi: boolean,
   width: number,
-  height: number
+  height: number,
+  animatedUrl: string = ''
 ) {
-  Image(getMediaImageUrl(thumbnail, url, imageLoadType, isWifi))
+  Image(getMediaImageUrl(thumbnail, url, imageLoadType, isWifi, animatedUrl))
     .width(width)
     .height(height)
     .syncLoad(false)
     .alt($r('app.media.startIcon'))
     .objectFit(ImageFit.Cover)
     .interpolation(ImageInterpolation.High)
-    .autoResize(true)
+    .autoResize(animatedUrl.length === 0)
     .sourceSize({ width: Math.ceil(width), height: Math.ceil(height) })
     .onError(() => {
       // 媒体图加载失败静默处理：alt 占位图会自动显示

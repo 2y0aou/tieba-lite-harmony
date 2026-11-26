@@ -5,6 +5,7 @@
 // 注意：aiotieba 在 get_posts/_api.py 中 USER_POSTS_VERSION="8"（非 LATEST_VERSION），
 // 但 HarmonyOS 端统一用 STABLE_VERSION（12.64.1.1）以复用 postProtobuf，实测服务端兼容
 
+import { resolveAnimatedImageUrl } from '../utils/MediaAnimation';
 import { ThreadInfo, UserInfo, MediaInfo, MediaType } from '../model/ForumModels';
 import { ProtoWriter, ProtoReader } from './ProtoWire';
 import { STABLE_VERSION } from '../net/TiebaHttpClient';
@@ -225,6 +226,7 @@ function decodePostInfoList(reader: ProtoReader): ThreadInfo {
 function decodeMedia(reader: ProtoReader): MediaInfo {
   const media = new MediaInfo();
   let mediaType: number = 0;
+  let dynamicPic: string = '';
   while (!reader.isEnd()) {
     const tag = reader.readTag();
     switch (tag.fieldNumber) {
@@ -249,10 +251,17 @@ function decodeMedia(reader: ProtoReader): MediaInfo {
       case 5:  // small_pic
         media.thumbnail = reader.readString();
         break;
+      case 18:  // dynamic_pic
+        dynamicPic = reader.readString();
+        break;
       default:
         reader.skipField(tag.wireType);
         break;
     }
+  }
+  media.animatedUrl = resolveAnimatedImageUrl(dynamicPic, media.url);
+  if (media.url.length === 0) {
+    media.url = media.animatedUrl;
   }
   return media;
 }

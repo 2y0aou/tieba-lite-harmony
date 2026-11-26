@@ -17,8 +17,10 @@ import {
 import { BaseViewModel, FetchDataResult } from '../main/ets/viewmodel/BaseViewModel';
 import { getAvatarUrl } from '../main/ets/utils/AvatarUtil';
 import { isAllowedLoginUrl, isLoginSuccessUrl } from '../main/ets/utils/LoginWebSecurityUtil';
-import { decodePbPageRes, encodePbPageReq, IPbPageReqParams } from '../main/ets/proto/PbPageProto';
+import { decodePostContent, decodePbPageRes, encodePbPageReq, IPbPageReqParams } from '../main/ets/proto/PbPageProto';
 import { ProtoReader, ProtoTag, ProtoWriter } from '../main/ets/proto/ProtoWire';
+import { decodeMediaInline, decodePostContentInline } from '../main/ets/proto/ProtoSendables';
+import { detectAnimatedImageExt } from '../main/ets/utils/MediaAnimation';
 import { ReleaseInfo, UpdateChecker } from '../main/ets/utils/UpdateChecker';
 import { dedupeByKey } from '../main/ets/utils/FormatUtil';
 import {
@@ -520,6 +522,49 @@ export default function localUnitTest() {
    * - shouldLoad=true + shouldLoadOrigin=false 返回缩略图 URL
    * - thumbnail 为空时 fallback 到原图 URL
    */
+  describe('TiebaAnimatedMedia', () => {
+    it('postImagePrefersDynamicFieldInBothDecoders', 0, () => {
+      const encoded = new ProtoWriter();
+      encoded.writeInt32(1, 3);
+      encoded.writeString(8, 'thumb.jpg');
+      encoded.writeString(16, 'animated.jpg');
+      encoded.writeString(25, 'still.jpg');
+      const data = encoded.finish();
+
+      const main = decodePostContent(new ProtoReader(data)).mediaList[0];
+      const sendable = decodePostContentInline(new ProtoReader(data));
+      expect(main.thumbnail).assertEqual('thumb.jpg');
+      expect(main.animatedUrl).assertEqual('animated.jpg');
+      expect(sendable.mediaList[0].animatedUrl).assertEqual(main.animatedUrl);
+    });
+
+    it('detectsGifAndWebpHeadersForSaving', 0, () => {
+      expect(detectAnimatedImageExt(toBytes('GIF89a1234').buffer)).assertEqual('gif');
+      expect(detectAnimatedImageExt(toBytes('RIFF1234WEBP').buffer)).assertEqual('webp');
+      expect(detectAnimatedImageExt(toBytes('JPEG00000000').buffer)).assertEqual('');
+    });
+
+    it('feedKeepsMediaDynamicPicField', 0, () => {
+      const encoded = new ProtoWriter();
+      encoded.writeString(2, 'thumb.jpg');
+      encoded.writeString(18, 'motion.webp');
+      const media = decodeMediaInline(new ProtoReader(encoded.finish()));
+      expect(media.thumbnail).assertEqual('thumb.jpg');
+      expect(media.animatedUrl).assertEqual('motion.webp');
+    });
+
+    it('animationStillRespectsNoImageModes', 0, () => {
+      expect(getMediaImageUrl('thumb.jpg', 'origin.jpg', IMAGE_LOAD_SMART_ORIGIN, false, 'motion.webp'))
+        .assertEqual('motion.webp');
+      expect(getMediaImageUrl('thumb.jpg', 'origin.GIF?size=original', IMAGE_LOAD_SMART_ORIGIN, false))
+        .assertEqual('origin.GIF?size=original');
+      expect(getMediaImageUrl('thumb.jpg', 'origin.gif', IMAGE_LOAD_SMART_NO, false, 'motion.webp'))
+        .assertEqual('');
+      expect(getMediaImageUrl('thumb.jpg', 'origin.gif', IMAGE_LOAD_ALL_NO, true, 'motion.webp'))
+        .assertEqual('');
+    });
+  });
+
   describe('ImageLoadUtilGetMediaImageUrl', () => {
     it('getMediaImageUrl_allNo_returnsEmpty', 0, () => {
       // 始终无图：shouldLoad=false，返回空字符串
@@ -875,7 +920,8 @@ export default function localUnitTest() {
 
     it('urlAndMark_format', 0, () => {
       expect(EmoticonManager.getEmoticonUrl('image_emoticon25'))
-        .assertEqual('http://static.tieba.baidu.com/tb/editor/images/client/image_emoticon25.png');
+        .assertEqual('https://tb2.bdstatic.com/tb/editor/images/client/image_emoticon25.png');
+      expect(EmoticonManager.normalizeEmoticonId('image_emoticon')).assertEqual('image_emoticon1');
       expect(EmoticonManager.buildEmoticonMark('滑稽')).assertEqual('#(滑稽)');
     });
   });

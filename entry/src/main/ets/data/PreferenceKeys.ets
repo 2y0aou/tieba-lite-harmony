@@ -66,6 +66,7 @@ export class StringPrefs {
   static readonly AVATAR: StringPreferenceKey = new StringPreferenceKey('avatar', '', 'LoginPage');
   static readonly BAIDUID: StringPreferenceKey = new StringPreferenceKey('baiduid', '', 'WebLoginPage');
   static readonly BDUSS: StringPreferenceKey = new StringPreferenceKey('bduss', '', 'AuthSessionManager');
+  static readonly BROWSE_HISTORY: StringPreferenceKey = new StringPreferenceKey('browseHistory', '[]', 'BrowseHistoryManager');
   static readonly CLIENT_ID: StringPreferenceKey = new StringPreferenceKey('client_id', '', 'TiebaAPI');
   static readonly CUID: StringPreferenceKey = new StringPreferenceKey('cuid', '', 'LoginPage');
   static readonly DEVICE_ID: StringPreferenceKey = new StringPreferenceKey('device_id', '', 'CryptoUtil');
@@ -82,7 +83,7 @@ export class StringPrefs {
   static readonly UUID: StringPreferenceKey = new StringPreferenceKey('uuid', '', 'CryptoUtil');
   static readonly Z_ID: StringPreferenceKey = new StringPreferenceKey('z_id', '', 'TiebaAPI');
 
-  static readonly ALL_STRING: StringPreferenceKey[] = [StringPrefs.AES_CBC_SEC_KEY, StringPrefs.ANDROID_ID, StringPrefs.AVATAR, StringPrefs.BAIDUID, StringPrefs.BDUSS, StringPrefs.CLIENT_ID, StringPrefs.CUID, StringPrefs.DEVICE_ID, StringPrefs.LITTLE_TAIL, StringPrefs.NAME, StringPrefs.NICKNAME, StringPrefs.RECENT_FORUMS, StringPrefs.SAMPLE_ID, StringPrefs.STOKEN, StringPrefs.TBS, StringPrefs.THREAD_DRAFT, StringPrefs.TIEBA_UID, StringPrefs.UID, StringPrefs.UUID, StringPrefs.Z_ID];
+  static readonly ALL_STRING: StringPreferenceKey[] = [StringPrefs.AES_CBC_SEC_KEY, StringPrefs.ANDROID_ID, StringPrefs.AVATAR, StringPrefs.BAIDUID, StringPrefs.BDUSS, StringPrefs.BROWSE_HISTORY, StringPrefs.CLIENT_ID, StringPrefs.CUID, StringPrefs.DEVICE_ID, StringPrefs.LITTLE_TAIL, StringPrefs.NAME, StringPrefs.NICKNAME, StringPrefs.RECENT_FORUMS, StringPrefs.SAMPLE_ID, StringPrefs.STOKEN, StringPrefs.TBS, StringPrefs.THREAD_DRAFT, StringPrefs.TIEBA_UID, StringPrefs.UID, StringPrefs.UUID, StringPrefs.Z_ID];
 }
 
 /** 布尔偏好 key 注册表 */
@@ -94,12 +95,13 @@ export class BooleanPrefs {
   static readonly HOME_DUAL_COLUMN: BooleanPreferenceKey = new BooleanPreferenceKey('homeDualColumn', false, 'Index');
   static readonly NOTIFICATION_ENABLED: BooleanPreferenceKey = new BooleanPreferenceKey('notificationEnabled', false, 'SettingsPage');
   static readonly RECEIVE_PRERELEASE_UPDATES: BooleanPreferenceKey = new BooleanPreferenceKey('receivePrereleaseUpdates', false, 'SettingsPage');
+  static readonly SHOW_TIEBA_USERNAME: BooleanPreferenceKey = new BooleanPreferenceKey('showTiebaUsername', false, 'SettingsPage');
   static readonly SHOW_RECENT_FORUMS: BooleanPreferenceKey = new BooleanPreferenceKey('showRecentForums', false, 'SettingsPage');
   static readonly THREAD_COMMENT_PREVIEW: BooleanPreferenceKey = new BooleanPreferenceKey('threadCommentPreview', true, 'SettingsPage');
   static readonly THREAD_FLOATING_BAR: BooleanPreferenceKey = new BooleanPreferenceKey('threadFloatingBar', false, 'SettingsPage');
   static readonly VIBRATOR_ENABLED: BooleanPreferenceKey = new BooleanPreferenceKey('vibratorEnabled', true, 'SettingsPage');
 
-  static readonly ALL_BOOLEAN: BooleanPreferenceKey[] = [BooleanPrefs.APP_LOCK_ENABLED, BooleanPrefs.CREDENTIAL_NON_PERSISTENT_MIGRATED, BooleanPrefs.DYNAMIC_COLOR_ENABLED, BooleanPrefs.FORUM_COMMENT_PREVIEW, BooleanPrefs.HOME_DUAL_COLUMN, BooleanPrefs.NOTIFICATION_ENABLED, BooleanPrefs.RECEIVE_PRERELEASE_UPDATES, BooleanPrefs.SHOW_RECENT_FORUMS, BooleanPrefs.THREAD_COMMENT_PREVIEW, BooleanPrefs.THREAD_FLOATING_BAR, BooleanPrefs.VIBRATOR_ENABLED];
+  static readonly ALL_BOOLEAN: BooleanPreferenceKey[] = [BooleanPrefs.APP_LOCK_ENABLED, BooleanPrefs.CREDENTIAL_NON_PERSISTENT_MIGRATED, BooleanPrefs.DYNAMIC_COLOR_ENABLED, BooleanPrefs.FORUM_COMMENT_PREVIEW, BooleanPrefs.HOME_DUAL_COLUMN, BooleanPrefs.NOTIFICATION_ENABLED, BooleanPrefs.RECEIVE_PRERELEASE_UPDATES, BooleanPrefs.SHOW_RECENT_FORUMS, BooleanPrefs.SHOW_TIEBA_USERNAME, BooleanPrefs.THREAD_COMMENT_PREVIEW, BooleanPrefs.THREAD_FLOATING_BAR, BooleanPrefs.VIBRATOR_ENABLED];
 }
 
 /** 注册表统一入口：key 存在性校验（AppStorageManager 各访问器调用，未注册记 warn） */

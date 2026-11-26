@@ -1,14 +1,20 @@
-import { curves } from '@kit.ArkUI';
+import { common } from '@kit.AbilityKit';
+import { systemShare } from '@kit.ShareKit';
 import { ThreadInfo, MediaInfo, SubPostInfo } from '../model/ForumModels';
 import { formatRelativeTime } from '../utils/TimeUtil';
 import { getMediaImageUrl, getAvatarImageUrl } from '../utils/ImageLoadUtil';
 import { connectTheme, ThemeState } from '../theme/ThemeManager';
-import { RADIUS_SM, RADIUS_CARD, RADIUS_PILL, BORDER_HAIRLINE } from '../theme/DesignTokens';
+import { RADIUS_PILL, RADIUS_SM } from '../theme/DesignTokens';
 import { RouterUtil, ImageViewerNavParams } from '../utils/RouterUtil';
+import { getResourceString } from '../utils/ResourceUtil';
+import { buildThreadShareUrl } from '../utils/AppLinkingUtil';
+import { buildHyperlinkShareData } from '../utils/KnockShareUtil';
+import { Logger } from '../utils/Logger';
+import { formatCount } from '../utils/FormatUtil';
+import { formatTiebaName, getTiebaPrimaryName, getTiebaUsernameSuffix } from '../utils/TiebaName';
+import { connectTiebaUsername, TiebaUsernameState } from '../model/AppStorageV2Models';
 import { requestCommentPreview } from '../utils/ThreadCommentCache';
 
-// 按压/松开动画时长（ms），Down/Up 两侧保持一致
-const CARD_PRESS_ANIM_DURATION_MS: number = 100;
 const SUB_POST_ANONYMOUS_NAME: string = '匿名';
 
 @Preview
@@ -30,6 +36,7 @@ export struct ThreadCard {
 
   /** 卡片按下态（对齐 iOS 原型 :active 缩放 0.98 + 透明度 0.85） */
   @Local isPressed: boolean = false;
+  @Local tiebaUsernameState: TiebaUsernameState = connectTiebaUsername();
   @Local themeState: ThemeState = connectTheme();
   @Param commentPreviewEnabled: boolean = false;
   // 图片加载模式（0=智能原图 1=智能无图 2=始终原图 3=始终无图），由父组件从 AppStorageV2 传入
@@ -40,9 +47,7 @@ export struct ThreadCard {
   // FrsPage API 不返回楼层列表，需额外请求；用 ThreadCommentCache 全局缓存避免重复请求
   @Local previewPosts: SubPostInfo[] = [];
   @Local isPreviewLoading: boolean = false;
-  // #298 点赞/点踩 bounce 动效触发器：symbolEffect 以计数器变化触发弹跳（@ReusableV2 复用时随组件重建归零）
-  @Local agreeTrigger: number = 0;
-  @Local disagreeTrigger: number = 0;
+  private isSharing: boolean = false;
 
   // A11 GlobalReuse：组件被复用时重置按压态，避免上次卡片在按压状态被回收后残留
   // 同时重置评论预览状态，并对新 thread.tid 触发懒加载（如果 commentPreviewEnabled 启用）
@@ -82,25 +87,25 @@ export struct ThreadCard {
     this.isPreviewLoading = loading;
   }
 
-  // 单张图片：占满宽度，aspectRatio 2.25（宽幅横图）
   @Builder
   SingleMedia() {
     Image(getMediaImageUrl(
       this.thread.mediaList[0].thumbnail,
       this.thread.mediaList[0].url,
       this.imageLoadType,
-      this.isWifi
+      this.isWifi,
+      this.thread.mediaList[0].animatedUrl
     ))
       .width('100%')
-      .aspectRatio(2.25)
+      .aspectRatio(1.6)
       .objectFit(ImageFit.Cover)
-      .borderRadius(RADIUS_SM)
+      .borderRadius(10)
       .backgroundColor($r('app.color.input_background'))
       .alt($r('app.media.startIcon'))
       // A5 图片优化：网络大图异步加载避免阻塞 UI + 高质量插值缓解锯齿 + 自动降采样减少内存
       .syncLoad(false)
       .interpolation(ImageInterpolation.High)
-      .autoResize(true)
+      .autoResize(this.thread.mediaList[0].animatedUrl.length === 0)
       .onError(() => {
         // 媒体图加载失败静默处理：alt 占位图会自动显示
       })
@@ -159,38 +164,55 @@ export struct ThreadCard {
     })
   }
 
-  // 多图网格项：layoutWeight 1 + 1:1 宽高比，最后一项无右侧间距
+  // 两张或三张缩略图等宽，超过 3 张时在第 3 张右下角叠加 +N 胶囊角标
   @Builder
   GridMedia(index: number, isLast: boolean) {
-    Image(getMediaImageUrl(
-      this.thread.mediaList[index].thumbnail,
-      this.thread.mediaList[index].url,
-      this.imageLoadType,
-      this.isWifi
-    ))
-      .layoutWeight(1)
-      .aspectRatio(1)
-      .objectFit(ImageFit.Cover)
-      .borderRadius(RADIUS_SM)
-      .backgroundColor($r('app.color.input_background'))
-      .alt($r('app.media.startIcon'))
-      // A5 图片优化：网格缩略图异步加载避免阻塞滑动 + 自动降采样减少内存 + 错误兜底
-      .syncLoad(false)
-      .interpolation(ImageInterpolation.Medium)
-      .autoResize(true)
-      .onError(() => {
-        // 缩略图加载失败静默处理：alt 占位图会自动显示
-      })
-      .margin({ right: isLast ? 0 : 4 })
-      // #92 HitTestMode.Transparent：让 Image 既响应 onClick 跳转，又让触控穿透到父 List
-      .hitTestBehavior(HitTestMode.Transparent)
-      // #132 共享元素转场：源端 Image 绑定 shareId，与模态目标端 Image 配对
-      // 必须配合 .transition() 使用，否则转场不触发且 Image 不显示
-      .geometryTransition(`card_${this.thread.tid}_${index}`, { follow: true })
-      .transition(TransitionEffect.OPACITY.animation({ duration: 350, curve: Curve.Friction }))
-      .onClick(() => {
-        this.openImageViewer(index);
-      })
+    Stack({ alignContent: Alignment.BottomEnd }) {
+      Image(getMediaImageUrl(
+        this.thread.mediaList[index].thumbnail,
+        this.thread.mediaList[index].url,
+        this.imageLoadType,
+        this.isWifi,
+        this.thread.mediaList[index].animatedUrl
+      ))
+        .width('100%')
+        .height('100%')
+        .objectFit(ImageFit.Cover)
+        .borderRadius(RADIUS_SM)
+        .backgroundColor($r('app.color.input_background'))
+        .alt($r('app.media.startIcon'))
+        // A5 图片优化：网格缩略图异步加载避免阻塞滑动 + 自动降采样减少内存 + 错误兜底
+        .syncLoad(false)
+        .interpolation(ImageInterpolation.Medium)
+        .autoResize(this.thread.mediaList[index].animatedUrl.length === 0)
+        .onError(() => {
+          // 缩略图加载失败静默处理：alt 占位图会自动显示
+        })
+        // #92 HitTestMode.Transparent：让 Image 既响应 onClick 跳转，又让触控穿透到父 List
+        .hitTestBehavior(HitTestMode.Transparent)
+        // #132 共享元素转场：源端 Image 绑定 shareId，与模态目标端 Image 配对
+        // 必须配合 .transition() 使用，否则转场不触发且 Image 不显示
+        .geometryTransition(`card_${this.thread.tid}_${index}`, { follow: true })
+        .transition(TransitionEffect.OPACITY.animation({ duration: 350, curve: Curve.Friction }))
+        .onClick(() => {
+          this.openImageViewer(index);
+        })
+
+      if (index === 2 && this.thread.mediaList.length > 3) {
+        Text(`+${this.thread.mediaList.length - 3}`)
+          .fontSize(11)
+          .fontWeight(FontWeight.Medium)
+          .fontColor(Color.White)
+          .backgroundColor('rgba(0, 0, 0, 0.56)')
+          .padding({ left: 7, right: 7, top: 2, bottom: 2 })
+          .borderRadius(RADIUS_PILL)
+          .margin({ right: 6, bottom: 6 })
+          .hitTestBehavior(HitTestMode.None)
+      }
+    }
+    .layoutWeight(1)
+    .aspectRatio(this.thread.mediaList.length === 2 ? 1.45 : 1)
+    .margin({ right: isLast ? 0 : 5 })
   }
 
   /** 计算视频封面宽高比（videoWidth/videoHeight 有效时用实际比例，否则默认 16:9） */
@@ -207,7 +229,7 @@ export struct ThreadCard {
    * 由 geometryTransition 接管共享元素转场动画
    */
   private openImageViewer(index: number): void {
-    const urls: string[] = this.thread.mediaList.map((m: MediaInfo) => m.url);
+    const urls: string[] = this.thread.mediaList.map((m: MediaInfo) => m.animatedUrl.length > 0 ? m.animatedUrl : m.url);
     const shareId: string = `card_${this.thread.tid}_${index}`;
     RouterUtil.pushWithTransition(
       RouterUtil.ROUTE_IMAGE_VIEWER_PAGE,
@@ -218,40 +240,28 @@ export struct ThreadCard {
 
   @Builder
   ForumChip() {
-    Row({ space: 8 }) {
+    Row({ space: 6 }) {
       if (this.thread.forumInfo.avatar.length > 0) {
         Image(getAvatarImageUrl(this.thread.forumInfo.avatar, this.imageLoadType, this.isWifi))
-          .width(24)
-          .height(24)
-          .borderRadius(12)
+          .width(16)
+          .height(16)
+          .borderRadius(8)
           .objectFit(ImageFit.Cover)
-          .backgroundColor($r('app.color.input_background'))
           .alt($r('app.media.startIcon'))
           .syncLoad(false)
-      } else {
-        Text(this.thread.forumName.substring(0, 1))
-          .width(24)
-          .height(24)
-          .fontSize(12)
-          .fontColor($r('app.color.text_secondary'))
-          .textAlign(TextAlign.Center)
-          .backgroundColor($r('app.color.input_background'))
-          .borderRadius(12)
       }
-      Text(this.thread.forumName)
+      Text($r('app.string.android_forum_name', this.thread.forumName))
         .fontSize(12)
         .fontColor($r('app.color.text_secondary'))
         .maxLines(1)
         .textOverflow({ overflow: TextOverflow.Ellipsis })
     }
-    .padding({ top: 4, bottom: 4, left: 8, right: 8 })
+    .padding({ left: 6, right: 10, top: 4, bottom: 4 })
     .borderRadius(RADIUS_PILL)
     .backgroundColor($r('app.color.input_background'))
-    .margin({ top: 10, bottom: 2 })
+    .margin({ top: 10 })
     .onClick(() => {
-      if (this.onForumClick) {
-        this.onForumClick(this.thread)
-      }
+      this.onForumClick?.(this.thread);
     })
   }
 
@@ -303,11 +313,11 @@ export struct ThreadCard {
           LoadingProgress()
             .width(14)
             .height(14)
-            .color($r('app.color.text_caption'))
+            .color($r('app.color.post_metadata'))
             .margin({ right: 6 })
           Text($r('app.string.comment_preview_loading'))
             .fontSize(12)
-            .fontColor($r('app.color.text_caption'))
+            .fontColor($r('app.color.post_metadata'))
         }
         .width('100%')
         .justifyContent(FlexAlign.Center)
@@ -318,12 +328,11 @@ export struct ThreadCard {
       ForEach(this.previewPosts,
         (post: SubPostInfo, index: number) => {
           Text() {
-            Span(post.author.name.length > 0
-              ? post.author.name
-              : (post.author.nickname.length > 0 ? post.author.nickname : SUB_POST_ANONYMOUS_NAME))
+            Span(formatTiebaName(post.author.nickname, post.author.name, this.tiebaUsernameState.value) ||
+              SUB_POST_ANONYMOUS_NAME)
               .fontColor(this.themeState.primary)
             Span('：' + post.content)
-              .fontColor($r('app.color.text_caption'))
+              .fontColor($r('app.color.text_primary'))
           }
           .fontSize(13)
           .maxLines(4)
@@ -363,107 +372,151 @@ export struct ThreadCard {
     })
   }
 
-  build() {
-    Column() {
-      // #236 置顶帖分支：渲染简洁样式（仅置顶 Chip + 单行标题），不渲染完整 FeedCard
-      // 对齐 Android 原版 TopThreadItem，避免置顶帖与正常帖子占用相同高度
-      if (this.thread.isTop) {
-        this.TopThreadItem()
-      } else {
-      // 用户行：36px 头像 + 14px 用户名 + 12px 时间，gap 10
-      Row() {
+  private async shareThread(): Promise<void> {
+    const host = this.getUIContext().getHostContext() as common.UIAbilityContext | undefined;
+    if (!host || this.thread.tid <= 0 || this.isSharing) {
+      return;
+    }
+    this.isSharing = true;
+    try {
+      const controller = new systemShare.ShareController(buildHyperlinkShareData(
+        buildThreadShareUrl(this.thread.tid), this.thread.title, this.thread.content
+      ));
+      controller.on('dismiss', () => {
+        this.isSharing = false;
+      });
+      await controller.show(host, {
+        previewMode: systemShare.SharePreviewMode.DEFAULT,
+        selectionMode: systemShare.SelectionMode.SINGLE
+      });
+    } catch (err) {
+      this.isSharing = false;
+      Logger.error('ThreadCard', (err as Error).message);
+    }
+  }
+
+  @Builder
+  FeedAuthor() {
+    Row() {
+      Row({ space: 8 }) {
         Image(getAvatarImageUrl(this.thread.author.avatar, this.imageLoadType, this.isWifi))
-          .width(36)
-          .height(36)
-          .borderRadius(18)
+          .width(32)
+          .height(32)
+          .borderRadius(16)
           .objectFit(ImageFit.Cover)
           .backgroundColor($r('app.color.input_background'))
           .alt($r('app.media.startIcon'))
-          // #166 滑动卡顿优化：头像异步解码避免阻塞主线程（参考 PostItem 优化经验）
-          // loadMore 加载 30 个新 ThreadCard 时，syncLoad(true) 同步解码会阻塞主线程约 1 秒
           .syncLoad(false)
           .interpolation(ImageInterpolation.Low)
-          .onError(() => {
-            // 头像加载失败静默处理：alt 占位图会自动显示
-          })
-
-        Column() {
-          Text(this.thread.author.name)
-            .fontSize(14)
-            .fontWeight(600)
-            .fontColor($r('app.color.text_primary'))
-            .maxLines(1)
-            .textOverflow({ overflow: TextOverflow.Ellipsis })
-
-          Text(formatRelativeTime(this.thread.createTime))
-            .fontSize(12)
+        Column({ space: 2 }) {
+          Text() {
+            Span(getTiebaPrimaryName(this.thread.author.nickname, this.thread.author.name))
+              .fontSize(13)
+              .fontWeight(FontWeight.Medium)
+              .fontColor($r('app.color.text_primary'))
+            if (getTiebaUsernameSuffix(this.thread.author.nickname, this.thread.author.name,
+              this.tiebaUsernameState.value).length > 0) {
+              Span(getTiebaUsernameSuffix(this.thread.author.nickname, this.thread.author.name,
+                this.tiebaUsernameState.value))
+                .fontSize(12)
+                .fontWeight(FontWeight.Normal)
+                .fontColor($r('app.color.text_secondary'))
+            }
+          }
+          .maxLines(this.tiebaUsernameState.value ? 2 : 1)
+          .textOverflow({ overflow: TextOverflow.Ellipsis })
+          Text(this.thread.author.ipAddress.length > 0
+            ? `${formatRelativeTime(this.thread.createTime)} · IP属地: ${this.thread.author.ipAddress}`
+            : formatRelativeTime(this.thread.createTime))
+            .fontSize(11)
             .fontColor($r('app.color.text_caption'))
         }
-        .alignItems(HorizontalAlign.Start)
-        .margin({ left: 10 })
         .layoutWeight(1)
+        .alignItems(HorizontalAlign.Start)
       }
-      .width('100%')
-      .margin({ bottom: 8 })
-      .alignItems(VerticalAlign.Center)
-      // #92 HitTestMode.Transparent：让触控穿透到父 List，避免 fling 期间碰到用户行导致触控丢失
-      // onAuthorClick 仍能触发（Transparent 自身响应事件，但不阻止兄弟组件）
+      .layoutWeight(1)
       .hitTestBehavior(HitTestMode.Transparent)
-      .onClick(() => {
-        if (this.onAuthorClick) {
-          this.onAuthorClick();
-        }
-      })
+      .onClick(() => this.onAuthorClick?.())
 
-      // 标签独立一行（置顶/精华，位于 user-row 之后、title 之前，gap 6）
-      if (this.thread.isTop || this.thread.isGood) {
+      if (this.onDisagreeClick) {
         Row() {
-          if (this.thread.isTop) {
-            Text($r('app.string.top_label'))
-              .fontSize(11)
-              .fontWeight(600)
-              .fontColor($r('app.color.tag_top'))
-              .backgroundColor($r('app.color.tag_top_light'))
-              .padding({ left: 8, right: 8, top: 2, bottom: 2 })
-              .borderRadius(6)
-          }
-          if (this.thread.isGood) {
-            Text($r('app.string.good_label'))
-              .fontSize(11)
-              .fontWeight(600)
-              .fontColor($r('app.color.tag_good'))
-              .backgroundColor($r('app.color.tag_good_light'))
-              .padding({ left: 8, right: 8, top: 2, bottom: 2 })
-              .borderRadius(6)
-              .margin({ left: this.thread.isTop ? 6 : 0 })
-          }
+          Image($r('app.media.android_chevron_down'))
+            .width(18)
+            .height(18)
+            .fillColor($r('app.color.post_metadata'))
         }
-        .margin({ bottom: 6 })
+        .width(40)
+        .height(36)
+        .justifyContent(FlexAlign.End)
+        .accessibilityText($r('app.string.menu_more'))
+        .bindMenu([
+          {
+            value: getResourceString(this.thread.isDisagreed ?
+              $r('app.string.android_undo_dislike') : $r('app.string.android_dislike')),
+            action: () => this.onDisagreeClick?.(this.thread)
+          }
+        ])
       }
+    }
+    .width('100%')
+    .alignItems(VerticalAlign.Center)
+    .margin({ bottom: 8 })
+  }
 
-      // 标题（16px SemiBold，lineHeight 1.35）
-      Text(this.thread.title)
+  @Builder
+  FeedAction(symbolRes: Resource, label: string | Resource, color: ResourceColor, onTap: () => void) {
+    Row({ space: 5 }) {
+      SymbolGlyph(symbolRes)
         .fontSize(16)
-        .fontWeight(600)
+        .fontColor([color])
+      Text(label)
+        .fontSize(12)
+        .fontColor(color)
+    }
+    .layoutWeight(1)
+    .justifyContent(FlexAlign.Center)
+    .height(36)
+    .onClick(onTap)
+  }
+
+  @Builder
+  FeedContent() {
+    Column() {
+      this.FeedAuthor()
+
+      if (this.thread.title.length > 0) {
+        Text() {
+          if (this.thread.isGood) {
+            Span($r('app.string.good_label'))
+              .fontWeight(FontWeight.Bold)
+              .fontColor(this.themeState.primary)
+            Span(' ')
+          }
+          Span(this.thread.title)
+        }
+        .width('100%')
+        .fontSize(15.5)
+        .fontWeight(FontWeight.Medium)
         .fontColor($r('app.color.text_primary'))
         .maxLines(2)
         .textOverflow({ overflow: TextOverflow.Ellipsis })
-        .lineHeight(16 * 1.35)
-        .margin({ bottom: 6 })
+        .lineHeight(22)
+        .margin({ bottom: this.thread.content.length > 0 ? 4 : 8 })
+      }
 
-      // 摘要（14px，3 行截断，lineHeight 1.5）
       if (this.thread.content.length > 0) {
         Text(this.thread.content)
+          .width('100%')
           .fontSize(14)
-          .fontColor($r('app.color.text_secondary'))
-          .maxLines(3)
+          .fontColor(this.thread.title.length > 0 ? $r('app.color.text_secondary') : $r('app.color.text_primary'))
+          .maxLines(this.thread.title.length > 0 ? 3 : 5)
           .textOverflow({ overflow: TextOverflow.Ellipsis })
-          .lineHeight(14 * 1.5)
-          .margin({ bottom: 10 })
+          .lineHeight(20)
+          .margin({ bottom: 8 })
       }
 
       // 媒体区域：视频帖优先渲染 VideoMedia（封面+播放图标，点击跳帖子详情）
-      // 非视频帖走 mediaList 图片渲染（1 张占满宽度 aspectRatio 2.25，2-3 张用 Row + layoutWeight 1 + 1:1）
+      // 单图和多图使用固定比例的裁切预览。
       if (this.thread.videoInfo.videoUrl.length > 0) {
         this.VideoMedia()
       } else if (this.thread.mediaList.length > 0) {
@@ -496,116 +549,51 @@ export struct ThreadCard {
         this.HotPostPreview()
       }
 
-      // 操作栏：顶部 0.5px 分割线，gap 20，左[赞][踩] 右[评论]
       Row() {
-        Row() {
-          // #298 点赞图标：SymbolGlyph 矢量符号（已赞实心 + 主题色），点赞触发 bounce 弹跳动效
-          SymbolGlyph(this.thread.isAgreed ? $r('sys.symbol.hand_thumbsup_fill') : $r('sys.symbol.hand_thumbsup'))
-            .fontSize(18)
-            .fontColor([this.thread.isAgreed ? this.themeState.primary : $r('app.color.text_caption')])
-            .symbolEffect(new BounceSymbolEffect(EffectScope.WHOLE, EffectDirection.UP), this.agreeTrigger)
-            // #92 HitTestMode.Transparent：让触控穿透到父 List
-            .hitTestBehavior(HitTestMode.Transparent)
-          Text(this.thread.agreeNum.toString())
-            .fontSize(13)
-            .fontColor(this.thread.isAgreed ? this.themeState.primary : $r('app.color.text_caption'))
-            .margin({ left: 4 })
-        }
-        .alignItems(VerticalAlign.Center)
-        // #92 HitTestMode.Transparent：点赞按钮仍响应 onClick，同时让触控穿透到父 List
-        .hitTestBehavior(HitTestMode.Transparent)
-        .onClick(() => {
-          // 点赞（非取消）时触发图标弹跳动效
-          if (!this.thread.isAgreed) {
-            this.agreeTrigger++;
-          }
-          if (this.onAgreeClick) {
-            this.onAgreeClick(this.thread);
-          }
-        })
-
-        Row() {
-          // #298 点踩图标：SymbolGlyph 矢量符号（已踩实心 + 错误色），点踩触发 bounce 弹跳动效
-          SymbolGlyph(this.thread.isDisagreed ? $r('sys.symbol.hand_thumbsdown_fill') : $r('sys.symbol.hand_thumbsdown'))
-            .fontSize(18)
-            .fontColor([this.thread.isDisagreed ? $r('app.color.error') : $r('app.color.text_caption')])
-            .symbolEffect(new BounceSymbolEffect(EffectScope.WHOLE, EffectDirection.UP), this.disagreeTrigger)
-            // #92 HitTestMode.Transparent：让触控穿透到父 List
-            .hitTestBehavior(HitTestMode.Transparent)
-          Text(this.thread.disagreeNum.toString())
-            .fontSize(13)
-            .fontColor(this.thread.isDisagreed ? $r('app.color.error') : $r('app.color.text_caption'))
-            .margin({ left: 4 })
-        }
-        .alignItems(VerticalAlign.Center)
-        .margin({ left: 20 })
-        // #92 HitTestMode.Transparent：踩按钮仍响应 onClick，同时让触控穿透到父 List
-        .hitTestBehavior(HitTestMode.Transparent)
-        .onClick(() => {
-          // 点踩（非取消）时触发图标弹跳动效
-          if (!this.thread.isDisagreed) {
-            this.disagreeTrigger++;
-          }
-          if (this.onDisagreeClick) {
-            this.onDisagreeClick(this.thread);
-          }
-        })
-
-        Blank()
-
-        Row() {
-          // #298 评论图标：SymbolGlyph 气泡矢量符号，替换 PNG（ic_message）
-          SymbolGlyph($r('sys.symbol.ellipsis_message'))
-            .fontSize(18)
-            .fontColor([$r('app.color.text_caption')])
-            // #92 HitTestMode.Transparent：让触控穿透到父 List
-            .hitTestBehavior(HitTestMode.Transparent)
-          Text(this.thread.replyNum.toString())
-            .fontSize(13)
-            .fontColor($r('app.color.text_caption'))
-            .margin({ left: 4 })
-        }
-        .alignItems(VerticalAlign.Center)
-        .margin({ left: 20 })
-        // #92 HitTestMode.Transparent：评论按钮仍响应 onClick，同时让触控穿透到父 List
-        .hitTestBehavior(HitTestMode.Transparent)
-        .onClick(() => {
-          if (this.onCommentClick) {
-            this.onCommentClick(this.thread);
-          }
-        })
+        this.FeedAction($r('sys.symbol.share'),
+          this.thread.shareNum > 0 ? formatCount(this.thread.shareNum) : $r('app.string.menu_share'),
+          $r('app.color.post_metadata'), () => {
+            this.shareThread();
+          })
+        this.FeedAction($r('sys.symbol.message'),
+          this.thread.replyNum > 0 ? formatCount(this.thread.replyNum) : $r('app.string.reply_button_label'),
+          $r('app.color.post_metadata'), () => this.onCommentClick?.(this.thread))
+        this.FeedAction(this.thread.isAgreed ? $r('sys.symbol.heart_fill') : $r('sys.symbol.heart'),
+          this.thread.agreeNum > 0 ? formatCount(this.thread.agreeNum) : $r('app.string.android_agree'),
+          this.thread.isAgreed ? this.themeState.primary : $r('app.color.post_metadata'),
+          () => this.onAgreeClick?.(this.thread))
       }
       .width('100%')
-      .margin({ top: 10 })
-      .padding({ top: 10, bottom: 0, left: 0, right: 0 })
-      .border({ width: { top: 0.5 }, color: $r('app.color.divider') })
-      }
+      .margin({ top: 4, bottom: 2 })
     }
     .width('100%')
-    .padding({ top: 14, bottom: 14, left: 16, right: 16 })
-    .backgroundColor($r('app.color.card_background'))
-    .borderRadius(RADIUS_CARD)
-    .transition(TransitionEffect.OPACITY
-      .combine(TransitionEffect.translate({ y: 20 }))
-      .animation({ duration: 300, curve: Curve.EaseOut }))
-    .renderGroup(true)
+    .alignItems(HorizontalAlign.Start)
+  }
+
+  build() {
+    Column() {
+      if (this.thread.isTop) {
+        this.TopThreadItem()
+      } else {
+        this.FeedContent()
+      }
+      Divider()
+        .width('100%')
+        .strokeWidth(0.5)
+        .color($r('app.color.divider'))
+    }
+    .width('100%')
+    .padding({ top: this.thread.isTop ? 0 : 14, left: 16, right: 16 })
+    .backgroundColor(this.isPressed ? $r('app.color.input_background') : $r('app.color.card_background'))
     .alignItems(HorizontalAlign.Start)
     // #93 HitTestMode.Transparent：让卡片 onClick 仍能触发，同时让触控穿透到父 List
     // 修复热榜/关注/推荐 Tab 滑动被拦截问题（对齐 ThreadPage PostItem 实现）
-    // 之前默认 Auto + onClick 会阻止事件向父 List 传播，List 无法滚动
     .hitTestBehavior(HitTestMode.Transparent)
-    .border({ width: BORDER_HAIRLINE, color: $r('app.color.divider') })
-    .scale({ x: this.isPressed ? 0.98 : 1, y: this.isPressed ? 0.98 : 1 })
-    .opacity(this.isPressed ? 0.85 : 1)
     .onTouch((event: TouchEvent) => {
       if (event.type === TouchType.Down) {
-        this.getUIContext().animateTo({ duration: CARD_PRESS_ANIM_DURATION_MS, curve: curves.springMotion() }, () => {
-          this.isPressed = true;
-        });
+        this.isPressed = true;
       } else if (event.type === TouchType.Up || event.type === TouchType.Cancel) {
-        this.getUIContext().animateTo({ duration: CARD_PRESS_ANIM_DURATION_MS, curve: curves.springMotion() }, () => {
-          this.isPressed = false;
-        });
+        this.isPressed = false;
       }
     })
     .onClick(() => {

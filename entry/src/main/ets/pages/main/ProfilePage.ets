@@ -303,6 +303,12 @@ export struct ProfilePage {
                 () => this.navigateToThreadStore()
               )
               this.MenuRow(
+                $r('app.string.profile_browse_history'),
+                $r('app.media.ic_eye'),
+                true,
+                () => RouterUtil.push(RouterUtil.ROUTE_BROWSE_HISTORY_PAGE)
+              )
+              this.MenuRow(
                 $r('app.string.profile_switch_account'),
                 $r('app.media.ic_switch_account'),
                 true,

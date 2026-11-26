@@ -24,7 +24,7 @@ import {
   IMAGE_LOAD_ALL_ORIGIN,
   IMAGE_LOAD_ALL_NO
 } from '../../utils/ImageLoadUtil';
-import { connectImageLoadType, connectHomeDualColumn, connectThreadFloatingBar, ThreadFloatingBarState, connectTabVisibility, connectMaterialLevel, connectHomeListMode, TabVisibilityState, MaterialLevelState, HomeListModeState, HOME_LIST_MODE_SINGLE, HOME_LIST_MODE_DOUBLE_FULL, HOME_LIST_MODE_DOUBLE_COMPACT, ForumPageVersionState, connectForumPageVersion, ForumFabFunctionState, connectForumFabFunction, DefaultHomePageState, connectDefaultHomePage, DEFAULT_HOME_PAGE_HOME, DEFAULT_HOME_PAGE_FAVORITES, DEFAULT_HOME_PAGE_MESSAGES, DEFAULT_HOME_PAGE_PROFILE, ForumCommentPreviewState, ThreadCommentPreviewState, RecentForumsState, connectForumCommentPreview, connectThreadCommentPreview, connectRecentForums } from '../../model/AppStorageV2Models';
+import { connectImageLoadType, connectHomeDualColumn, connectThreadFloatingBar, ThreadFloatingBarState, connectTabVisibility, connectMaterialLevel, connectHomeListMode, TabVisibilityState, MaterialLevelState, HomeListModeState, HOME_LIST_MODE_SINGLE, HOME_LIST_MODE_DOUBLE_FULL, HOME_LIST_MODE_DOUBLE_COMPACT, ForumPageVersionState, connectForumPageVersion, ForumFabFunctionState, connectForumFabFunction, DefaultHomePageState, connectDefaultHomePage, DEFAULT_HOME_PAGE_HOME, DEFAULT_HOME_PAGE_FAVORITES, DEFAULT_HOME_PAGE_MESSAGES, DEFAULT_HOME_PAGE_PROFILE, ForumCommentPreviewState, ThreadCommentPreviewState, RecentForumsState, connectForumCommentPreview, connectThreadCommentPreview, connectRecentForums, TiebaUsernameState, connectTiebaUsername } from '../../model/AppStorageV2Models';
 import { MATERIAL_TYPE_IMMERSIVE, resolveMaterialLevel } from '../../theme/MaterialUtil';
 import { VibratorUtil } from '../../utils/VibratorUtil';
 import { UserAuthUtil } from '../../utils/UserAuthUtil';
@@ -236,6 +236,7 @@ export struct SettingsPage {
   // #127 消息通知开关切换中（防抖，避免连点）
   @Local notificationToggling: boolean = false;
   @Local forumCommentPreviewState: ForumCommentPreviewState = connectForumCommentPreview();
+  @Local tiebaUsernameState: TiebaUsernameState = connectTiebaUsername();
   @Local threadCommentPreviewState: ThreadCommentPreviewState = connectThreadCommentPreview();
   @Local receivePrereleaseUpdates: boolean = false;
   @Local forumCommentPreview: boolean = false; // Toggle 状态（同步 forumCommentPreviewState）
@@ -308,6 +309,7 @@ export struct SettingsPage {
       this.notificationEnabled = await storage.getBoolean(BooleanPrefs.NOTIFICATION_ENABLED.key, false);
       this.forumCommentPreviewState.value = await storage.getBoolean(BooleanPrefs.FORUM_COMMENT_PREVIEW.key, false);
       this.threadCommentPreviewState.value = await storage.getBoolean(BooleanPrefs.THREAD_COMMENT_PREVIEW.key, true);
+      this.tiebaUsernameState.value = await storage.getBoolean(BooleanPrefs.SHOW_TIEBA_USERNAME.key, false);
       this.receivePrereleaseUpdates = await storage.getBoolean(BooleanPrefs.RECEIVE_PRERELEASE_UPDATES.key, false);
       this.forumCommentPreview = this.forumCommentPreviewState.value; // 同步状态
       this.recentForumsState.value = await storage.getBoolean(BooleanPrefs.SHOW_RECENT_FORUMS.key, false);
@@ -2159,6 +2161,17 @@ export struct SettingsPage {
                 this.threadCommentPreviewState.value = value;
                 this.setBooleanPreference(BooleanPrefs.THREAD_COMMENT_PREVIEW.key, value).catch((err: Error) => {
                   Logger.error(TAG, `[SettingsPage] save threadCommentPreview failed: ${err.message}`);
+                });
+              })
+            this.dividerBuilder()
+            this.booleanPreferenceBuilder(
+              $r('app.string.settings_show_tieba_username'),
+              $r('app.string.settings_show_tieba_username_desc'),
+              this.tiebaUsernameState.value,
+              (value: boolean) => {
+                this.tiebaUsernameState.value = value;
+                this.setBooleanPreference(BooleanPrefs.SHOW_TIEBA_USERNAME.key, value).catch((err: Error) => {
+                  Logger.error(TAG, `[SettingsPage] save showTiebaUsername failed: ${err.message}`);
                 });
               })
             this.dividerBuilder()

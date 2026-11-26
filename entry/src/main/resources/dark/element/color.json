@@ -2,7 +2,7 @@
   "color": [
     {
       "name": "start_window_background",
-      "value": "#0F1013"
+      "value": "#0E1014"
     },
     {
       "name": "primary",
@@ -14,35 +14,43 @@
     },
     {
       "name": "background",
-      "value": "#0F1013"
+      "value": "#0E1014"
     },
     {
       "name": "page_background",
-      "value": "#0F1013"
+      "value": "#0E1014"
+    },
+    {
+      "name": "post_metadata",
+      "value": "#9BA3B0"
+    },
+    {
+      "name": "android_post_background",
+      "value": "#17191F"
     },
     {
       "name": "card_background",
-      "value": "#1A1C21"
+      "value": "#17191F"
     },
     {
       "name": "input_background",
-      "value": "#26282E"
+      "value": "#22252D"
     },
     {
       "name": "text_primary",
-      "value": "#E8EAED"
+      "value": "#EBEDF0"
     },
     {
       "name": "text_secondary",
-      "value": "#A6ABB3"
+      "value": "#9CA3AF"
     },
     {
       "name": "text_caption",
-      "value": "#6B7078"
+      "value": "#707682"
     },
     {
       "name": "divider",
-      "value": "#2A2D33"
+      "value": "#262932"
     },
     {
       "name": "error",

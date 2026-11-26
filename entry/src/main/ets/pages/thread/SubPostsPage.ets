@@ -2,7 +2,7 @@ import { HdsNavDestination, ScrollEffectType, hdsMaterial } from '@kit.UIDesignK
 import { inputMethod } from '@kit.IMEKit';
 import { TiebaAPI } from '../../api/TiebaAPI';
 import { SubPostInfo, PostInfo, ContentFragment, ContentFragmentType, UserInfo } from '../../model/ForumModels';
-import { ImageLoadTypeState, IsWifiState, MaterialLevelState, SafeBottomState, connectImageLoadType, connectIsWifi, connectMaterialLevel, connectSafeBottom } from '../../model/AppStorageV2Models';
+import { ImageLoadTypeState, IsWifiState, MaterialLevelState, SafeBottomState, connectImageLoadType, connectIsWifi, connectMaterialLevel, connectSafeBottom, connectTiebaUsername, TiebaUsernameState } from '../../model/AppStorageV2Models';
 import { MATERIAL_TYPE_IMMERSIVE, resolveMaterialLevel, resolveReplySheetMaterial } from '../../theme/MaterialUtil';
 import { LoadingView } from '../../components/LoadingView';
 import { ErrorView } from '../../components/ErrorView';
@@ -17,6 +17,7 @@ import { VibratorUtil } from '../../utils/VibratorUtil';
 import { RouterUtil, SubPostsNavParams, UserProfileNavParams } from '../../utils/RouterUtil';
 import { getStatusBarHeight } from '../../utils/StatusBarUtil';
 import { Logger } from '../../utils/Logger';
+import { formatTiebaName } from '../../utils/TiebaName';
 
 const TAG: string = 'SubPostsPage';
 
@@ -53,7 +54,7 @@ const REPLY_LOCATE_SCROLL_DELAY_MS: number = 100;
  */
 @ReusableV2
 @ComponentV2
-struct SubPostItemView {
+export struct SubPostItemView {
   @Require @Param post: SubPostInfo;
   /** 点赞回调（父组件传入，乐观更新 + 失败回滚） */
   @Event onAgreeClick?: (post: SubPostInfo) => void;
@@ -66,6 +67,8 @@ struct SubPostItemView {
   // #79 图片加载策略：由父组件从 AppStorageV2 传入
   @Param imageLoadType: number = 0;
   @Param isWifi: boolean = false;
+  @Param compact: boolean = false;
+  @Local tiebaUsernameState: TiebaUsernameState = connectTiebaUsername();
   @Local themeState: ThemeState = connectTheme();
 
   // Toast 提示 helper（API 12+ 推荐用 UIContext.getPromptAction() 替代全局 promptAction）
@@ -78,33 +81,38 @@ struct SubPostItemView {
       // 作者行
       Row() {
         // #79 接入图片加载策略：shouldLoad=false 时返回空串，Image 组件显示 alt 占位图
-        Image(getAvatarImageUrl(this.post.author.avatar, this.imageLoadType, this.isWifi))
-          .width(28)
-          .height(28)
-          .borderRadius(14)
-          .objectFit(ImageFit.Cover)
-          .backgroundColor($r('app.color.input_background'))
-          .alt($r('app.media.startIcon'))
-          .syncLoad(false)
-          .interpolation(ImageInterpolation.Low)
-          .onError(() => { /* 头像加载失败静默处理 */ })
-          // #92 HitTestMode.Transparent：让触控穿透到父 List，避免 fling 期间碰到图片导致触控丢失
-          .hitTestBehavior(HitTestMode.Transparent)
+        if (!this.compact) {
+          Image(getAvatarImageUrl(this.post.author.avatar, this.imageLoadType, this.isWifi))
+            .width(28)
+            .height(28)
+            .borderRadius(14)
+            .objectFit(ImageFit.Cover)
+            .backgroundColor($r('app.color.input_background'))
+            .alt($r('app.media.startIcon'))
+            .syncLoad(false)
+            .interpolation(ImageInterpolation.Low)
+            .onError(() => { /* 头像加载失败静默处理 */ })
+            // #92 HitTestMode.Transparent：让触控穿透到父 List，避免 fling 期间碰到图片导致触控丢失
+            .hitTestBehavior(HitTestMode.Transparent)
+        }
 
         Column() {
-          Text(this.post.author.nickname.length > 0 ? this.post.author.nickname : this.post.author.name)
+          Text(formatTiebaName(this.post.author.nickname, this.post.author.name, this.tiebaUsernameState.value) ||
+            getResourceString($r('app.string.profile_default_name')))
             .fontSize(13)
             .fontColor($r('app.color.text_primary'))
             .fontWeight(600)
-            .maxLines(1)
+            .maxLines(this.tiebaUsernameState.value ? 2 : 1)
             .textOverflow({ overflow: TextOverflow.Ellipsis })
-          Text(formatRelativeTime(this.post.createTime))
-            .fontSize(11)
-            .fontColor($r('app.color.text_caption'))
-            .margin({ top: 2 })
+          if (!this.compact) {
+            Text(formatRelativeTime(this.post.createTime))
+              .fontSize(11)
+              .fontColor($r('app.color.post_metadata'))
+              .margin({ top: 2 })
+          }
         }
         .alignItems(HorizontalAlign.Start)
-        .margin({ left: 8 })
+        .margin({ left: this.compact ? 0 : 8 })
         .layoutWeight(1)
       }
       .width('100%')
@@ -136,11 +144,14 @@ struct SubPostItemView {
                   }
                 })
             } else if (frag.type === ContentFragmentType.EMOJI) {
-              // 复用 EmoticonManager 构造 CDN URL，统一 URL 构造逻辑
-              ImageSpan(EmoticonManager.getEmoticonUrl(frag.text))
-                .width(18)
-                .height(18)
-                .verticalAlign(ImageSpanAlignment.CENTER)
+              if (EmoticonManager.hasRenderableEmoticon(frag.text)) {
+                ImageSpan(EmoticonManager.getEmoticonResource(frag.text))
+                  .width(18)
+                  .height(18)
+                  .verticalAlign(ImageSpanAlignment.CENTER)
+              } else {
+                Span(EmoticonManager.getFallbackLabel(frag.text, frag.emojiDesc))
+              }
             } else {
               Span(frag.text)
             }
@@ -168,7 +179,7 @@ struct SubPostItemView {
           Image($r('app.media.ic_chat_bubble'))
             .width(14)
             .height(14)
-            .fillColor($r('app.color.text_caption'))
+            .fillColor($r('app.color.post_metadata'))
             // A5 图片优化：本地 SVG 图标
             .syncLoad(true)
             .interpolation(ImageInterpolation.Low)
@@ -176,7 +187,7 @@ struct SubPostItemView {
             .hitTestBehavior(HitTestMode.Transparent)
           Text(getResourceString($r('app.string.reply_button_label')))
             .fontSize(12)
-            .fontColor($r('app.color.text_caption'))
+            .fontColor($r('app.color.post_metadata'))
             .margin({ left: 3 })
         }
         .alignItems(VerticalAlign.Center)
@@ -194,7 +205,7 @@ struct SubPostItemView {
           Image($r('app.media.ic_like'))
             .width(14)
             .height(14)
-            .fillColor(this.post.isAgreed ? this.themeState.primary : $r('app.color.text_caption'))
+            .fillColor(this.post.isAgreed ? this.themeState.primary : $r('app.color.post_metadata'))
             // A5 图片优化：本地 SVG 图标
             .syncLoad(true)
             .interpolation(ImageInterpolation.Low)
@@ -203,7 +214,7 @@ struct SubPostItemView {
           if (this.post.agreeNum > 0) {
             Text(this.post.agreeNum.toString())
               .fontSize(12)
-              .fontColor(this.post.isAgreed ? this.themeState.primary : $r('app.color.text_caption'))
+              .fontColor(this.post.isAgreed ? this.themeState.primary : $r('app.color.post_metadata'))
               .margin({ left: 3 })
           }
         }
@@ -223,8 +234,13 @@ struct SubPostItemView {
       .margin({ top: 8 })
     }
     .width('100%')
-    .padding(12)
-    .backgroundColor($r('app.color.card_background'))
+    .padding({
+      left: this.compact ? 10 : 12,
+      right: this.compact ? 10 : 12,
+      top: this.compact ? 8 : 12,
+      bottom: this.compact ? 2 : 12
+    })
+    .backgroundColor(this.compact ? Color.Transparent : $r('app.color.card_background'))
     .borderRadius(8)
   }
 }
@@ -564,7 +580,7 @@ export struct SubPostsPage {
           Column() {
             Text($r('app.string.subposts_empty'))
               .fontSize(14)
-              .fontColor($r('app.color.text_caption'))
+              .fontColor($r('app.color.post_metadata'))
               .textAlign(TextAlign.Center)
           }
           .width('100%')
@@ -604,7 +620,7 @@ export struct SubPostsPage {
                 Row() {
                   Text($r('app.string.loading_more'))
                     .fontSize(14)
-                    .fontColor($r('app.color.text_caption'))
+                    .fontColor($r('app.color.post_metadata'))
                 }
                 .width('100%')
                 .height(LOAD_MORE_ITEM_HEIGHT)
@@ -627,7 +643,7 @@ export struct SubPostsPage {
                 Row() {
                   Text($r('app.string.no_more_posts'))
                     .fontSize(12)
-                    .fontColor($r('app.color.text_caption'))
+                    .fontColor($r('app.color.post_metadata'))
                 }
                 .width('100%')
                 .height(LOAD_MORE_ITEM_HEIGHT)

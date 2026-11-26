@@ -16,6 +16,7 @@ import { fileUri } from '@kit.CoreFileKit';
 import { common } from '@kit.AbilityKit';
 import { BusinessError } from '@kit.BasicServicesKit';
 import { getResourceString } from '../../utils/ResourceUtil';
+import { detectAnimatedImageExt } from '../../utils/MediaAnimation';
 import { VibratorUtil } from '../../utils/VibratorUtil';
 import { RouterUtil, ImageViewerNavParams } from '../../utils/RouterUtil';
 import { ImagePreview, PreviewDirection } from '@rv/image-preview';
@@ -93,7 +94,8 @@ export struct ImageViewerPage {
         return;
       }
       const context = this.getUIContext().getHostContext() as common.UIAbilityContext;
-      const ext: string = this.inferExtension(url);
+      const detectedExt: string = detectAnimatedImageExt(imageData);
+      const ext: string = detectedExt.length > 0 ? detectedExt : this.inferExtension(url);
       const fileName: string = `imgviewer_${Date.now()}.${ext}`;
       const filePath: string = `${context.filesDir}/${fileName}`;
       const file = await fs.open(filePath, fs.OpenMode.CREATE | fs.OpenMode.READ_WRITE);
@@ -188,7 +190,7 @@ export struct ImageViewerPage {
   }
 
   private inferExtension(url: string): string {
-    const lower: string = url.toLowerCase();
+    const lower: string = url.split(/[?#]/, 1)[0].toLowerCase();
     if (lower.endsWith('.png')) {
       return 'png';
     } else if (lower.endsWith('.webp')) {

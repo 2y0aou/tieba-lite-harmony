@@ -30,6 +30,7 @@ import { AppStorageManager } from '../data/AppStorage';
 import { NumberPrefs, StringPrefs } from '../data/PreferenceKeys';
 import { CredentialVault } from '../data/CredentialVault';
 import { getAvatarUrl } from '../utils/AvatarUtil';
+import { resolveAnimatedImageUrl } from '../utils/MediaAnimation';
 import { getErrMessage } from '../utils/ResourceUtil';
 import { ImageUploader, UploadedPicInfo } from '../utils/ImageUploader';
 import { Logger } from '../utils/Logger';
@@ -631,8 +632,8 @@ export class TiebaAPI {
       const pageData: PageData<ThreadInfo> = new PageData<ThreadInfo>();
       pageData.list = result.threads;
       pageData.currentPage = page;
-      // personalized 响应无 page 字段，用返回数量判断 hasMore
-      pageData.hasMore = result.threads.length >= rn;
+      // personalized 响应无 page 字段；过滤广告后条数可能略少于 rn，只要仍有数据即可继续翻页
+      pageData.hasMore = result.threads.length > 0;
       return pageData;
     } catch (err) {
       throw TiebaAPI.buildEndpointError(err, '获取个性推荐失败');
@@ -2057,12 +2058,17 @@ export class TiebaAPI {
             const media: MediaInfo = new MediaInfo();
             const bigPic: string = m.big_pic || '';
             const smallPic: string = m.small_Pic || '';
+            const dynamicPic: string = m.dynamic_pic || '';
             if (bigPic.length > 0) {
               media.url = bigPic;
             } else if (smallPic.length > 0) {
               media.url = smallPic;
             }
             media.thumbnail = smallPic;
+            media.animatedUrl = resolveAnimatedImageUrl(dynamicPic, media.url);
+            if (media.url.length === 0) {
+              media.url = media.animatedUrl;
+            }
             media.width = m.width || 0;
             media.height = m.height || 0;
             if (media.url.length > 0) {

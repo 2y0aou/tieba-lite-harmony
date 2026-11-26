@@ -109,6 +109,7 @@ export interface ThreadStoreMedia {
   type?: string;
   small_Pic?: string;
   big_pic?: string;
+  dynamic_pic?: string;
   width?: number;
   height?: number;
 }

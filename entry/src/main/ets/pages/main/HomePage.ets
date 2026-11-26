@@ -282,6 +282,7 @@ export struct HomePage {
     if (this.mainTabRefreshState.targetIndex !== 0) {
       return;
     }
+    this.scroller.scrollEdge(Edge.Top);
     if (!this.loginState.value) {
       return;
     }

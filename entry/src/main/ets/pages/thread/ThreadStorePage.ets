@@ -13,6 +13,7 @@ import { ThreadCard } from '../../components/ThreadCard';
 import { LoadingView } from '../../components/LoadingView';
 import { ErrorView } from '../../components/ErrorView';
 import { getResourceString } from '../../utils/ResourceUtil';
+import { getStatusBarHeight } from '../../utils/StatusBarUtil';
 import { handleThreadAgree, handleThreadDisagree } from '../../utils/ThreadInteractionHelper';
 import { CommonDataSource } from '../../utils/CommonDataSource';
 import { connectTheme, ThemeState } from '../../theme/ThemeManager';
@@ -20,6 +21,7 @@ import { RouterUtil, ThreadNavParams, UserProfileNavParams } from '../../utils/R
 import { Logger } from '../../utils/Logger';
 
 const TAG: string = 'ThreadStorePage';
+const TITLE_BAR_HEIGHT: number = 48;
 
 // #163 [A4-S3] Navigation 路由表 @Builder：供 router_map.json 的 buildFunction 引用
 @Builder
@@ -38,6 +40,7 @@ export struct ThreadStorePage {
   // 用 private 而非 @Local：标志位变化无需触发 UI 重渲染（对齐 ThreadPage.ets / SubPostsPage isProcessingSubPostAgree 惯例）
   private isDestroyed: boolean = false;
 
+  @Local statusBarHeight: number = 36;
   @Local threadCount: number = 0;
   @Local isLoading: boolean = false;
   @Local isRefreshing: boolean = false;
@@ -56,6 +59,11 @@ export struct ThreadStorePage {
   }
 
   async aboutToAppear() {
+    try {
+      this.statusBarHeight = await getStatusBarHeight(this.getUIContext());
+    } catch (err) {
+      Logger.error(TAG, `[ThreadStorePage] getStatusBarHeight failed: ${(err as Error).message}`);
+    }
     // #203 注入 DataSource 引用，供 BaseViewModel 内存压力时自动 clearCache
     this.viewModel.setDataSource(this.dataSource);
     this.loadThreads(true).catch((err: Error) => {
@@ -246,7 +254,6 @@ export struct ThreadStorePage {
                   },
                   onCommentClick: () => this.showCommentToast()
                 })
-                  .margin({ top: 4, bottom: 4 })
               }
               // 左滑显示"取消收藏"按钮（#115 列表滑动：收藏列表场景）
               .swipeAction({
@@ -271,15 +278,21 @@ export struct ThreadStorePage {
           .divider({ strokeWidth: 0 })
           .scrollBar(BarState.Off)
           .edgeEffect(EdgeEffect.Spring)
-          .cachedCount(5)
-          .padding({ left: 16, right: 16 })
-          .backgroundColor($r('app.color.page_background'))
+          .cachedCount(8, true)
+          .clip(false)
+          .backgroundColor($r('app.color.card_background'))
+          .onScrollIndex((_start: number, end: number) => {
+            if (this.threadCount > 0 && end >= this.threadCount - 5) {
+              this.onReachEnd();
+            }
+          })
           .onReachEnd(() => this.onReachEnd())
         }
       }
       .width('100%')
       .height('100%')
-      .backgroundColor($r('app.color.page_background'))
+      .padding({ top: this.statusBarHeight + TITLE_BAR_HEIGHT })
+      .backgroundColor($r('app.color.card_background'))
     }
     .titleBar({
       content: {
@@ -302,6 +315,6 @@ export struct ThreadStorePage {
       avoidLayoutSafeArea: true
     })
     .bindToScrollable([this.scroller])
-    .backgroundColor($r('app.color.page_background'))
+    .backgroundColor($r('app.color.card_background'))
   }
 }

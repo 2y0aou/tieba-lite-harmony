@@ -40,6 +40,78 @@
     { "name": "settings_home_list_mode_double_compact", "value": "Dual Column (Compact)" },
     { "name": "settings_home_list_mode", "value": "Homepage list mode" },
     { "name": "settings_home_list_mode_desc", "value": "Choose how followed forums are displayed" },
-    { "name": "home_login_required", "value": "Log in to view followed forums" }
+    { "name": "home_login_required", "value": "Log in to view followed forums" },
+    {
+      "name": "android_forum_name",
+      "value": "%s"
+    },
+    {
+      "name": "android_agree",
+      "value": "Like"
+    },
+    {
+      "name": "android_dislike",
+      "value": "Dislike"
+    },
+    {
+      "name": "android_undo_dislike",
+      "value": "Remove dislike"
+    },
+    {
+      "name": "android_reply_count",
+      "value": "Replies %d"
+    },
+    {
+      "name": "android_reply_time_floor",
+      "value": "%1$s · #%2$d"
+    },
+    {
+      "name": "android_author_level",
+      "value": "Lv.%d"
+    },
+    {
+      "name": "reply_to_floor",
+      "value": "Reply to this comment"
+    },
+    {
+      "name": "settings_show_tieba_username",
+      "value": "Show Tieba username"
+    },
+    {
+      "name": "settings_show_tieba_username_desc",
+      "value": "Show author names as nickname (username)"
+    },
+    {
+      "name": "profile_browse_history",
+      "value": "Browse history"
+    },
+    {
+      "name": "browse_history_title",
+      "value": "Browse history"
+    },
+    {
+      "name": "browse_history_empty",
+      "value": "No browse history yet"
+    },
+    {
+      "name": "browse_history_delete",
+      "value": "Delete"
+    },
+    {
+      "name": "browse_history_clear_title",
+      "value": "Clear browse history"
+    },
+    {
+      "name": "browse_history_clear_message",
+      "value": "Clear all local browse history?"
+    },
+    {
+      "name": "browse_history_clear_action",
+      "value": "Clear"
+    },
+    {
+      "name": "browse_history_cleared",
+      "value": "Browse history cleared"
+    }
   ]
 }

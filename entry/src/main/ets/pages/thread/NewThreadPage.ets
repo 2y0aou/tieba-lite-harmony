@@ -648,7 +648,7 @@ export struct NewThreadPage {
           ForEach(this.emoticons, (emoticon: EmoticonInfo, idx: number) => {
             GridItem() {
               Column() {
-                Image(EmoticonManager.getEmoticonUrl(emoticon.id))
+                Image(EmoticonManager.getEmoticonResource(emoticon.id))
                   .width(32)
                   .height(32)
                   .objectFit(ImageFit.Contain)

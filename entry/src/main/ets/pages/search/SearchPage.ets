@@ -68,9 +68,9 @@ struct SearchPostCard {
       if (this.item.title.length > 0) {
         Text(this.item.title)
           .fontSize(15)
-          .fontWeight(FontWeight.Medium)
+          .fontWeight(FontWeight.Bold)
           .fontColor($r('app.color.text_primary'))
-          .maxLines(1)
+          .maxLines(2)
           .textOverflow({ overflow: TextOverflow.Ellipsis })
           .width('100%')
       }
@@ -78,9 +78,9 @@ struct SearchPostCard {
       // 内容摘要
       if (this.item.text.length > 0) {
         Text(this.item.text)
-          .fontSize(13)
-          .fontColor($r('app.color.text_secondary'))
-          .maxLines(2)
+          .fontSize(15)
+          .fontColor($r('app.color.text_primary'))
+          .maxLines(3)
           .textOverflow({ overflow: TextOverflow.Ellipsis })
           .width('100%')
           .margin({ top: this.item.title.length > 0 ? 6 : 0 })
@@ -123,11 +123,15 @@ struct SearchPostCard {
       }
       .width('100%')
       .margin({ top: 8 })
+      Divider()
+        .width('100%')
+        .strokeWidth(0.5)
+        .color($r('app.color.divider'))
+        .margin({ top: 12 })
     }
     .width('100%')
-    .padding({ left: 16, right: 16, top: 12, bottom: 12 })
+    .padding({ left: 16, right: 16, top: 12 })
     .backgroundColor($r('app.color.card_background'))
-    .borderRadius(10)
   }
 }
 
@@ -495,7 +499,7 @@ export struct SearchPage {
       .layoutWeight(1)
       .justifyContent(FlexAlign.Center)
     } else {
-      List({ space: 8, scroller: this.scroller }) {
+      List({ scroller: this.scroller }) {
         LazyForEach(this.postDataSource, (item: ExactSearch) => {
           ListItem() {
             SearchPostCard({ item: item })
@@ -517,7 +521,6 @@ export struct SearchPage {
       .edgeEffect(EdgeEffect.Spring)
       .cachedCount(5)
       // #104 底部色差根因：去掉 bottom padding safeBottom+16，与 HomePage/ForumPage 一致
-      .padding({ left: 16, right: 16 })
       .backgroundColor($r('app.color.page_background'))
       .onReachEnd(() => {
         // onReachEnd 回调不处理 async 返回值，需 catch 避免 unhandled rejection

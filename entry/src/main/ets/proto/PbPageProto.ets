@@ -3,6 +3,7 @@
 // wire format 编解码复用 ProtoWire.ets
 // 用于 getPosts（帖子详情/回复列表），cmd=302001
 
+import { resolveAnimatedImageUrl } from '../utils/MediaAnimation';
 import { PostInfo, SubPostInfo, UserInfo, PageData, ThreadInfo, MediaInfo, ContentFragment, ContentFragmentType, VideoInfo, ForumInfo } from '../model/ForumModels';
 import { ProtoWriter, ProtoReader } from './ProtoWire';
 import { getAvatarUrl } from '../utils/AvatarUtil';
@@ -134,6 +135,9 @@ export function decodeUser(reader: ProtoReader): UserInfo {
       case 42:  // gender
         user.gender = reader.readVarint();
         break;
+      case 127: // ip_address（IP 属地）
+        user.ipAddress = reader.readString();
+        break;
       default:
         reader.skipField(tag.wireType);
         break;
@@ -172,54 +176,110 @@ export function decodePostContent(reader: ProtoReader): PostContentDecodeResult 
   let linkValue: string = '';     // field 3（LINK URL）
   let emojiDesc: string = '';     // field 11（EMOJI 描述）
   let uidValue: number = 0;       // field 15（AT 用户ID）
-  // 图片碎片字段（type=3/20 时有效，对齐 FragImage_p.from_proto）
+  // 图片碎片字段（type=3/20 或带 memeInfo 时有效，对齐 PbContent.proto）
+  let bigSrc: string = '';        // field 6 — 大图备用链接
   let cdnSrc: string = '';        // field 8 — 小图 CDN 链接
   let bigCdnSrc: string = '';     // field 9 — 大图 CDN 链接
   let originSrc: string = '';     // field 25 — 原图链接
+  let imageType: string = '';
+  let dynamicImage: string = '';
+  let staticImage: string = '';   // field 17 — 静态图兜底
+  let activeImage: string = '';
   let bsize: string = '';         // field 5 — "width,height" 显示尺寸（图片专用）
+  // 表情包/贴纸（field 33 MemeInfo）与贴吧+卡片（field 40/41）
+  let memePicUrl: string = '';
+  let memeThumbnail: string = '';
+  let memeWidth: number = 0;
+  let memeHeight: number = 0;
+  let tiebaplusTitle: string = '';
+  let tiebaplusDesc: string = '';
+  let tiebaplusUrl: string = '';
+  let itemName: string = '';
   // #151 视频碎片字段（type=5 时有效，对齐 PbContent.proto + aiotieba FragVideo_p.from_proto）
-  let srcValue: string = '';      // field 4 — src（视频封面URL）
+  let srcValue: string = '';      // field 4 — src（视频封面URL / type=20 贴纸图URL）
   let videoWidth: number = 0;     // field 18 — 视频宽度（uint32，视频专用，非 bsize）
   let videoHeight: number = 0;    // field 19 — 视频高度（uint32，视频专用，非 bsize）
 
   while (!reader.isEnd()) {
     const tag = reader.readTag();
     if (tag.fieldNumber === 1) {
-      // type（0=纯文本, 1=链接, 2/11=表情, 3/20=图片, 4=@, 5=视频, 9=电话号, 10=语音, 18=话题, 27=百科, 40=梗百科）
+      // type（0=纯文本, 1=链接, 2/11=表情, 3/20=图片, 4=@, 5=视频, 9=电话号, 10=语音, 18=话题, 27=百科, 35/36/37=贴吧+, 40=梗百科）
       fragmentType = reader.readVarint();
     } else if (tag.fieldNumber === 2) {
-      // text —— 通用字段，语义随 type 变化（TEXT正文 / LINK标题 / EMOJI的id / AT的昵称 / VIDEO的webUrl）
       textValue = reader.readString();
     } else if (tag.fieldNumber === 3) {
-      // link —— LINK的URL / VIDEO的视频URL（对齐 FragLink_p + PbContent type5）
       linkValue = reader.readString();
     } else if (tag.fieldNumber === 4) {
-      // src —— VIDEO的封面URL（对齐 PbContent.proto type5: src = 封面图）
       srcValue = reader.readString();
     } else if (tag.fieldNumber === 5) {
-      // bsize —— 图片/视频显示尺寸 "width,height"
       bsize = reader.readString();
+    } else if (tag.fieldNumber === 6) {
+      bigSrc = reader.readString();
     } else if (tag.fieldNumber === 8) {
-      // cdn_src —— 小图 CDN 链接
       cdnSrc = reader.readString();
     } else if (tag.fieldNumber === 9) {
-      // big_cdn_src —— 大图 CDN 链接
       bigCdnSrc = reader.readString();
+    } else if (tag.fieldNumber === 10) {
+      imageType = reader.readString();
     } else if (tag.fieldNumber === 11) {
-      // c —— EMOJI 描述（对齐 FragEmoji_p: desc = data_proto.c）
       emojiDesc = reader.readString();
     } else if (tag.fieldNumber === 15) {
-      // uid —— AT 用户ID（对齐 FragAt_p: user_id = data_proto.uid）
       uidValue = reader.readVarint();
+    } else if (tag.fieldNumber === 16) {
+      dynamicImage = reader.readString();
+    } else if (tag.fieldNumber === 17) {
+      staticImage = reader.readString();
     } else if (tag.fieldNumber === 18) {
-      // width —— 视频宽度（对齐 PbContent.proto field 18 + aiotieba FragVideo_p: width = data_proto.width）
       videoWidth = reader.readVarint();
     } else if (tag.fieldNumber === 19) {
-      // height —— 视频高度（对齐 PbContent.proto field 19 + aiotieba FragVideo_p: height = data_proto.height）
       videoHeight = reader.readVarint();
     } else if (tag.fieldNumber === 25) {
-      // origin_src —— 原图链接
       originSrc = reader.readString();
+    } else if (tag.fieldNumber === 33) {
+      // MemeInfo: picUrl=3, thumbnail=4, width=5, height=6
+      const memeReader = reader.readMessage();
+      while (!memeReader.isEnd()) {
+        const mTag = memeReader.readTag();
+        if (mTag.fieldNumber === 3) {
+          memePicUrl = memeReader.readString();
+        } else if (mTag.fieldNumber === 4) {
+          memeThumbnail = memeReader.readString();
+        } else if (mTag.fieldNumber === 5) {
+          memeWidth = memeReader.readVarint();
+        } else if (mTag.fieldNumber === 6) {
+          memeHeight = memeReader.readVarint();
+        } else {
+          memeReader.skipField(mTag.wireType);
+        }
+      }
+    } else if (tag.fieldNumber === 36) {
+      activeImage = reader.readString();
+    } else if (tag.fieldNumber === 40) {
+      // TiebaPlusInfo: title=1, desc=2, jump_url=3
+      const tpReader = reader.readMessage();
+      while (!tpReader.isEnd()) {
+        const tpTag = tpReader.readTag();
+        if (tpTag.fieldNumber === 1) {
+          tiebaplusTitle = tpReader.readString();
+        } else if (tpTag.fieldNumber === 2) {
+          tiebaplusDesc = tpReader.readString();
+        } else if (tpTag.fieldNumber === 3) {
+          tiebaplusUrl = tpReader.readString();
+        } else {
+          tpReader.skipField(tpTag.wireType);
+        }
+      }
+    } else if (tag.fieldNumber === 41) {
+      // Item: item_name=2
+      const itemReader = reader.readMessage();
+      while (!itemReader.isEnd()) {
+        const itemTag = itemReader.readTag();
+        if (itemTag.fieldNumber === 2) {
+          itemName = itemReader.readString();
+        } else {
+          itemReader.skipField(itemTag.wireType);
+        }
+      }
     } else {
       reader.skipField(tag.wireType);
     }
@@ -237,24 +297,30 @@ export function decodePostContent(reader: ProtoReader): PostContentDecodeResult 
     }
   } else if (fragmentType === 1) {
     // FragLink_p: 链接（text=标题, link=URL）
-    const frag: ContentFragment = new ContentFragment();
-    frag.type = ContentFragmentType.LINK;
-    frag.text = textValue;
-    frag.link = linkValue;
-    result.fragments.push(frag);
+    const linkLabel: string = textValue.length > 0 ? textValue : linkValue;
+    if (linkLabel.length > 0) {
+      const frag: ContentFragment = new ContentFragment();
+      frag.type = ContentFragmentType.LINK;
+      frag.text = linkLabel;
+      frag.link = linkValue.length > 0 ? linkValue : linkLabel;
+      result.fragments.push(frag);
+    }
   } else if (fragmentType === 2 || fragmentType === 11) {
     // FragEmoji_p: 表情（text=表情id, emojiDesc=描述）
-    // 防御：text 为空时跳过（避免 ImageSpan 加载 .../client/.png 无效 URL）
     if (textValue.length > 0) {
       const frag: ContentFragment = new ContentFragment();
       frag.type = ContentFragmentType.EMOJI;
       frag.text = textValue;
       frag.emojiDesc = emojiDesc;
       result.fragments.push(frag);
+    } else if (emojiDesc.length > 0) {
+      const frag: ContentFragment = new ContentFragment();
+      frag.type = ContentFragmentType.TEXT;
+      frag.text = `[${emojiDesc}]`;
+      result.fragments.push(frag);
     }
   } else if (fragmentType === 4) {
     // FragAt_p: @用户（text=昵称, uid=用户ID）
-    // 防御：text 为空时跳过（避免 Span('') 渲染空白可点击区域）
     if (textValue.length > 0) {
       const frag: ContentFragment = new ContentFragment();
       frag.type = ContentFragmentType.AT;
@@ -262,58 +328,103 @@ export function decodePostContent(reader: ProtoReader): PostContentDecodeResult 
       frag.uid = uidValue;
       result.fragments.push(frag);
     }
-  } else if (fragmentType === 3 || fragmentType === 20) {
-    // FragImage_p: 图片碎片（填充 mediaList，不创建 fragment，保留独立图片块渲染）
+  } else if (fragmentType === 3 || fragmentType === 20 || memePicUrl.length > 0 || memeThumbnail.length > 0) {
+    // FragImage_p: 图片/大贴纸/Meme表情包碎片
     const media: MediaInfo = new MediaInfo();
-    // URL 优先级：origin > big_cdn > cdn（对齐 FragImage_p）
+    // URL 优先级：origin > big_cdn > big_src > cdn > src > static > memePicUrl > memeThumbnail
     if (originSrc.length > 0) {
       media.url = originSrc;
     } else if (bigCdnSrc.length > 0) {
       media.url = bigCdnSrc;
-    } else {
+    } else if (bigSrc.length > 0) {
+      media.url = bigSrc;
+    } else if (cdnSrc.length > 0) {
       media.url = cdnSrc;
+    } else if (srcValue.length > 0) {
+      media.url = srcValue;
+    } else if (staticImage.length > 0) {
+      media.url = staticImage;
+    } else if (memePicUrl.length > 0) {
+      media.url = memePicUrl;
+    } else {
+      media.url = memeThumbnail;
     }
-    // 缩略图用小图 cdn_src
-    media.thumbnail = cdnSrc;
-    // 解析 bsize "width,height"
+    media.animatedUrl = resolveAnimatedImageUrl(dynamicImage, media.url, imageType, activeImage);
+    if (media.url.length === 0) {
+      media.url = media.animatedUrl.length > 0 ? media.animatedUrl : activeImage;
+    }
+    media.thumbnail = cdnSrc.length > 0 ? cdnSrc :
+      (memeThumbnail.length > 0 ? memeThumbnail : (srcValue.length > 0 ? srcValue : media.url));
     if (bsize.length > 0) {
       const parts: string[] = bsize.split(',');
       if (parts.length >= 2) {
-        // #101 P2 NaN 防护：Number('abc') 返回 NaN，NaN || 0 虽然得到 0 但语义模糊
-        // 显式 Number.isNaN 检查，避免 NaN 传播到下游（NaN <= 0 返回 false 是经典陷阱）
         const w: number = Number(parts[0]);
         const h: number = Number(parts[1]);
         media.width = Number.isNaN(w) ? 0 : w;
         media.height = Number.isNaN(h) ? 0 : h;
       }
     }
-    // 仅当有有效 URL 时才加入列表
+    if (media.width === 0 && memeWidth > 0) {
+      media.width = memeWidth;
+    }
+    if (media.height === 0 && memeHeight > 0) {
+      media.height = memeHeight;
+    }
     if (media.url.length > 0) {
       result.mediaList.push(media);
+    } else if (textValue.length > 0 || emojiDesc.length > 0) {
+      const frag: ContentFragment = new ContentFragment();
+      frag.type = ContentFragmentType.TEXT;
+      frag.text = textValue.length > 0 ? textValue : `[${emojiDesc}]`;
+      result.fragments.push(frag);
     }
   } else if (fragmentType === 5) {
-    // #151 FragVideo: 视频碎片（对齐 PbContent.proto type5 + Extensions.kt 转换逻辑）
-    // 有内嵌视频（src 封面非空）时创建 VIDEO fragment；否则降级为链接文本
+    // #151 FragVideo: 视频碎片
     if (srcValue.length > 0 && linkValue.length > 0) {
       const frag: ContentFragment = new ContentFragment();
       frag.type = ContentFragmentType.VIDEO;
-      frag.text = textValue;       // webUrl（视频网页链接，备用）
-      frag.videoUrl = linkValue;   // 视频 URL（field 3=link）
-      frag.coverUrl = srcValue;    // 封面 URL（field 4=src）
-      // 视频宽高用 field 18/19（uint32），非 bsize（图片专用字符串）
+      frag.text = textValue;
+      frag.videoUrl = linkValue;
+      frag.coverUrl = srcValue;
       frag.videoWidth = videoWidth;
       frag.videoHeight = videoHeight;
       result.fragments.push(frag);
-    } else if (textValue.length > 0) {
-      // 无内嵌视频：降级为 LINK fragment（对齐 Extensions.kt: 降级为可点击链接文本）
+    } else if (textValue.length > 0 || linkValue.length > 0) {
       const frag: ContentFragment = new ContentFragment();
       frag.type = ContentFragmentType.LINK;
-      frag.text = textValue;
-      frag.link = textValue;
+      frag.text = textValue.length > 0 ? textValue : '[视频]';
+      frag.link = linkValue.length > 0 ? linkValue : textValue;
+      result.fragments.push(frag);
+    }
+  } else if (fragmentType === 10) {
+    const frag: ContentFragment = new ContentFragment();
+    frag.type = ContentFragmentType.TEXT;
+    frag.text = '[语音]';
+    result.fragments.push(frag);
+  } else if (fragmentType === 35 || fragmentType === 36 || fragmentType === 37) {
+    // 贴吧+ 卡片/推广/话题链接
+    const tpLabel: string = tiebaplusTitle.length > 0 ? tiebaplusTitle :
+      (tiebaplusDesc.length > 0 ? tiebaplusDesc : textValue);
+    if (tpLabel.length > 0) {
+      const frag: ContentFragment = new ContentFragment();
+      frag.type = tiebaplusUrl.length > 0 ? ContentFragmentType.LINK : ContentFragmentType.TEXT;
+      frag.text = tpLabel;
+      frag.link = tiebaplusUrl;
+      result.fragments.push(frag);
+    }
+  } else {
+    // 兜底渲染其他未单独适配的富文本碎片，避免整层楼显示为空白
+    const fallbackText: string = textValue.length > 0 ? textValue :
+      (emojiDesc.length > 0 ? `[${emojiDesc}]` :
+        (itemName.length > 0 ? itemName :
+          (tiebaplusTitle.length > 0 ? tiebaplusTitle : linkValue)));
+    if (fallbackText.length > 0) {
+      const frag: ContentFragment = new ContentFragment();
+      frag.type = ContentFragmentType.TEXT;
+      frag.text = fallbackText;
       result.fragments.push(frag);
     }
   }
-  // 其他 type（10语音/35/36/37贴吧plus等）暂未实现，跳过
 
   return result;
 }
@@ -384,6 +495,13 @@ export function decodeSubPostList(reader: ProtoReader, tid: number, pid: number,
         }
         break;
       }
+      case 10: { // location（楼中楼 IP 属地兜底）
+        const loc: string = reader.readString();
+        if (loc.length > 0 && subPost.author.ipAddress.length === 0) {
+          subPost.author.ipAddress = loc;
+        }
+        break;
+      }
       default:
         reader.skipField(tag.wireType);
         break;
@@ -407,7 +525,11 @@ export function decodeSubPostList(reader: ProtoReader, tid: number, pid: number,
   if (authorId > 0 && users !== undefined) {
     const user: UserInfo | undefined = users.get(authorId);
     if (user !== undefined) {
+      const locFallback: string = subPost.author.ipAddress;
       subPost.author = user;
+      if (subPost.author.ipAddress.length === 0 && locFallback.length > 0) {
+        subPost.author.ipAddress = locFallback;
+      }
     }
   }
   if (subPost.author.uid === 0 && authorId > 0) {
@@ -422,6 +544,9 @@ export function decodePost(reader: ProtoReader, users: Map<number, UserInfo>, th
   post.tid = threadTid;
   let authorId: number = 0;
   let contentText: string = '';
+  let foldTip: string = '';
+  let hasSpriteMeme: boolean = false;
+  let embeddedAuthor: UserInfo | null = null;
 
   while (!reader.isEnd()) {
     const tag = reader.readTag();
@@ -437,12 +562,9 @@ export function decodePost(reader: ProtoReader, users: Map<number, UserInfo>, th
         break;
       case 5: {  // content（repeated PbContent）
         const contentReader = reader.readMessage();
-        // #101 decodePostContent 返回 PostContentDecodeResult（fragments + mediaList），纯函数无副作用
         const contentResult: PostContentDecodeResult = decodePostContent(contentReader);
         for (let i = 0; i < contentResult.fragments.length; i++) {
           post.fragments.push(contentResult.fragments[i]);
-          // 拼接可读文本到 contentText（向后兼容，content 字段保留纯文本展示/复制/搜索）
-          // TEXT/LINK/AT 的 text 是可读文本；EMOJI 的 text 是 id 非可读，不拼入
           if (contentResult.fragments[i].type === ContentFragmentType.TEXT
               || contentResult.fragments[i].type === ContentFragmentType.LINK
               || contentResult.fragments[i].type === ContentFragmentType.AT) {
@@ -468,7 +590,6 @@ export function decodePost(reader: ProtoReader, users: Map<number, UserInfo>, th
               post.subPostList.push(subPost);
             }
           } else {
-            // field 1 (pid) 等其他字段跳过（pid 已从 Post.id 取得）
             subPostReader.skipField(subPostTag.wireType);
           }
         }
@@ -477,6 +598,11 @@ export function decodePost(reader: ProtoReader, users: Map<number, UserInfo>, th
       case 19:  // author_id
         authorId = reader.readVarint();
         break;
+      case 23: { // 内嵌 author（user_list 缺失时兜底）
+        const authorReader = reader.readMessage();
+        embeddedAuthor = decodeUser(authorReader);
+        break;
+      }
       case 37: {  // agree（Agree: agree_num=1, has_agree=2, disagree_num=4）
         const agreeReader = reader.readMessage();
         while (!agreeReader.isEnd()) {
@@ -498,20 +624,51 @@ export function decodePost(reader: ProtoReader, users: Map<number, UserInfo>, th
         post.videoInfo = decodeVideoInfo(videoReader);
         break;
       }
+      case 44:  // fold_tip
+        foldTip = reader.readString();
+        break;
+      case 79:  // sprite_meme_info
+        hasSpriteMeme = true;
+        reader.skipField(tag.wireType);
+        break;
       default:
         reader.skipField(tag.wireType);
         break;
     }
   }
 
+  const hasPostVideo: boolean = post.videoInfo !== null && post.videoInfo.videoUrl.length > 0;
+  if (post.fragments.length === 0 && post.mediaList.length === 0 && !hasPostVideo) {
+    if (foldTip.length > 0) {
+      const tipFrag: ContentFragment = new ContentFragment();
+      tipFrag.type = ContentFragmentType.TEXT;
+      tipFrag.text = foldTip;
+      post.fragments.push(tipFrag);
+      contentText = foldTip;
+    } else if (hasSpriteMeme) {
+      const memeFrag: ContentFragment = new ContentFragment();
+      memeFrag.type = ContentFragmentType.TEXT;
+      memeFrag.text = '[贴吧表情包]';
+      post.fragments.push(memeFrag);
+      contentText = '[贴吧表情包]';
+    }
+  }
+
   post.content = contentText;
 
-  // 从 user_list 中查找作者
+  // 从 user_list 中查找作者，缺失时回退内嵌 author
   if (authorId > 0) {
     const user = users.get(authorId);
     if (user !== undefined) {
       post.author = user;
+    } else if (embeddedAuthor !== null) {
+      post.author = embeddedAuthor;
     }
+  } else if (embeddedAuthor !== null) {
+    post.author = embeddedAuthor;
+  }
+  if (post.author.ipAddress.length === 0 && embeddedAuthor !== null && embeddedAuthor.ipAddress.length > 0) {
+    post.author.ipAddress = embeddedAuthor.ipAddress;
   }
 
   return post;
@@ -668,6 +825,15 @@ export function decodePbPageRes(bytes: Uint8Array): PbPageResult {
                   forumReader.skipField(forumTag.wireType);
                 }
               }
+            } else if (threadTag.fieldNumber === 18) { // author（内嵌 User）
+              const authorReader = threadReader.readMessage();
+              const embeddedAuthor = decodeUser(authorReader);
+              if (embeddedAuthor.uid > 0 || embeddedAuthor.name.length > 0 || embeddedAuthor.nickname.length > 0) {
+                result.thread.author = embeddedAuthor;
+                if (embeddedAuthor.uid > 0) {
+                  threadAuthorId = embeddedAuthor.uid;
+                }
+              }
             } else if (threadTag.fieldNumber === 45) { // create_time（创建时间戳，秒）
               result.thread.createTime = threadReader.readVarint();
             } else if (threadTag.fieldNumber === 56) { // author_id（作者 uid）
@@ -717,7 +883,19 @@ export function decodePbPageRes(bytes: Uint8Array): PbPageResult {
       // 第二遍：解析 posts（此时 users map 已全部填充，author 关联可靠）
       const posts: PostInfo[] = [];
       for (let i = 0; i < rawPosts.length; i++) {
-        posts.push(decodePost(rawPosts[i], users, threadTid));
+        const post = decodePost(rawPosts[i], users, threadTid);
+        posts.push(post);
+        // 补全楼主作者与创建时间：部分帖子 thread.author_id 为 0，需从 1 楼 post.author 回填
+        if (post.floor === 1) {
+          if (result.thread.author.uid === 0 && result.thread.author.name.length === 0 &&
+            result.thread.author.nickname.length === 0 &&
+            (post.author.uid > 0 || post.author.name.length > 0 || post.author.nickname.length > 0)) {
+            result.thread.author = post.author;
+          }
+          if (result.thread.createTime === 0 && post.createTime > 0) {
+            result.thread.createTime = post.createTime;
+          }
+        }
       }
       result.posts.list = posts;
     } else {

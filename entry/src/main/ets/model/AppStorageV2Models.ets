@@ -112,6 +112,11 @@ export class ForumCommentPreviewState {
 }
 
 @ObservedV2
+export class TiebaUsernameState {
+  @Trace value: boolean = false;
+}
+
+@ObservedV2
 export class ThreadCommentPreviewState {
   @Trace value: boolean = true;
 }
@@ -293,6 +298,15 @@ export function connectForumCommentPreview(): ForumCommentPreviewState {
   if (state === undefined) {
     Logger.error(TAG, '[AppStorageV2] connect ForumCommentPreviewState returned undefined, fallback to new instance');
     return new ForumCommentPreviewState();
+  }
+  return state;
+}
+
+export function connectTiebaUsername(): TiebaUsernameState {
+  const state = AppStorageV2.connect(TiebaUsernameState, 'showTiebaUsername', () => new TiebaUsernameState());
+  if (state === undefined) {
+    Logger.error(TAG, '[AppStorageV2] connect TiebaUsernameState returned undefined');
+    return new TiebaUsernameState();
   }
   return state;
 }

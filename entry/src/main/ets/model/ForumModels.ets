@@ -176,6 +176,7 @@ export class ThreadInfo {
   @Trace content: string = '';
   @Trace createTime: number = 0;
   @Trace replyNum: number = 0;
+  @Trace shareNum: number = 0;
   @Trace viewNum: number = 0;
   @Trace agreeNum: number = 0;
   @Trace disagreeNum: number = 0;
@@ -209,6 +210,7 @@ export class ThreadInfo {
     if (init.content !== undefined) this.content = init.content;
     if (init.createTime !== undefined) this.createTime = init.createTime;
     if (init.replyNum !== undefined) this.replyNum = init.replyNum;
+    if (init.shareNum !== undefined) this.shareNum = init.shareNum;
     if (init.viewNum !== undefined) this.viewNum = init.viewNum;
     if (init.agreeNum !== undefined) this.agreeNum = init.agreeNum;
     if (init.disagreeNum !== undefined) this.disagreeNum = init.disagreeNum;
@@ -440,6 +442,7 @@ export class UserInfo {
   levelName: string = '';
   gender: number = 0;
   isBawu: boolean = false;
+  ipAddress: string = '';
 
   constructor(init?: Partial<UserInfo>) {
     if (init) {
@@ -457,12 +460,14 @@ export class UserInfo {
     if (init.levelName !== undefined) this.levelName = init.levelName;
     if (init.gender !== undefined) this.gender = init.gender;
     if (init.isBawu !== undefined) this.isBawu = init.isBawu;
+    if (init.ipAddress !== undefined) this.ipAddress = init.ipAddress;
   }
 }
 
 export class MediaInfo {
   type: MediaType = MediaType.IMAGE;
   url: string = '';
+  animatedUrl: string = '';
   thumbnail: string = '';
   width: number = 0;
   height: number = 0;
@@ -477,6 +482,7 @@ export class MediaInfo {
     if (init.type !== undefined) this.type = init.type;
     if (init.url !== undefined) this.url = init.url;
     if (init.thumbnail !== undefined) this.thumbnail = init.thumbnail;
+    if (init.animatedUrl !== undefined) this.animatedUrl = init.animatedUrl;
     if (init.width !== undefined) this.width = init.width;
     if (init.height !== undefined) this.height = init.height;
   }

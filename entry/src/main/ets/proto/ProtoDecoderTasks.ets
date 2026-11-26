@@ -113,9 +113,12 @@ export function decodeFrsPageResTask(bytes: Uint8Array): SendableFrsPageResult {
         }
       }
 
-      // 第二遍：解析 threads（此时 users map 已全部填充）
+      // 第二遍：解析 threads（此时 users map 已全部填充），过滤广告/直播推广与无效帖
       for (let i = 0; i < rawThreads.length; i++) {
-        result.threadsList.push(decodeThreadInline(rawThreads[i], users, forumName));
+        const thread: SendableThreadInfo = decodeThreadInline(rawThreads[i], users, forumName);
+        if (!thread.isAd && thread.tid > 0) {
+          result.threadsList.push(thread);
+        }
       }
     } else {
       reader.skipField(tag.wireType);
@@ -173,7 +176,10 @@ export function decodeGeneralTabListResTask(bytes: Uint8Array): SendableGeneralT
   }
 
   for (let i = 0; i < rawThreads.length; i++) {
-    result.threadsList.push(decodeThreadInline(rawThreads[i], users, ''));
+    const thread: SendableThreadInfo = decodeThreadInline(rawThreads[i], users, '');
+    if (!thread.isAd && thread.tid > 0) {
+      result.threadsList.push(thread);
+    }
   }
   return result;
 }
@@ -334,9 +340,20 @@ export function decodePbPageResTask(bytes: Uint8Array): SendablePbPageResult {
         }
       }
 
-      // 第二遍：解析 posts
+      // 第二遍：解析 posts（若 thread.author 缺失则从 1 楼回填）
       for (let i = 0; i < rawPosts.length; i++) {
-        result.postsList.push(decodePostInline(rawPosts[i], users, threadTid));
+        const post: SendablePostInfo = decodePostInline(rawPosts[i], users, threadTid);
+        result.postsList.push(post);
+        if (post.floor === 1) {
+          if (result.thread.author.uid === 0 && result.thread.author.name.length === 0 &&
+            result.thread.author.nickname.length === 0 &&
+            (post.author.uid > 0 || post.author.name.length > 0 || post.author.nickname.length > 0)) {
+            result.thread.author = post.author;
+          }
+          if (result.thread.createTime === 0 && post.createTime > 0) {
+            result.thread.createTime = post.createTime;
+          }
+        }
       }
     } else {
       reader.skipField(tag.wireType);
@@ -429,6 +446,7 @@ function rebuildUserInfo(s: SendableUserInfo): UserInfo {
   u.levelName = s.levelName;
   u.gender = s.gender;
   u.isBawu = s.isBawu;
+  u.ipAddress = s.ipAddress;
   return u;
 }
 
@@ -437,6 +455,7 @@ function rebuildMediaInfo(s: SendableMediaInfo): MediaInfo {
   const m: MediaInfo = new MediaInfo();
   m.type = s.type;
   m.url = s.url;
+  m.animatedUrl = s.animatedUrl;
   m.thumbnail = s.thumbnail;
   m.width = s.width;
   m.height = s.height;
@@ -480,12 +499,14 @@ function rebuildThreadInfo(s: SendableThreadInfo): ThreadInfo {
   t.content = s.content;
   t.createTime = s.createTime;
   t.replyNum = s.replyNum;
+  t.shareNum = s.shareNum;
   t.viewNum = s.viewNum;
   t.agreeNum = s.agreeNum;
   t.disagreeNum = s.disagreeNum;
   t.isTop = s.isTop;
   t.isGood = s.isGood;
   t.isEssence = s.isEssence;
+  t.isAd = s.isAd;
   for (let i = 0; i < s.mediaList.length; i++) {
     t.mediaList.push(rebuildMediaInfo(s.mediaList[i]));
   }

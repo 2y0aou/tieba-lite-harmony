@@ -1068,7 +1068,6 @@ export struct ForumPageFull {
                           onCommentClick: () => this.showCommentToast()
                         })
                       }
-                      .margin({ left: 16, right: 16, top: 4, bottom: 4 })
                     }, (thread: ThreadInfo) => thread.tid.toString())
 
                     // 加载更多 loading
@@ -1086,11 +1085,16 @@ export struct ForumPageFull {
               .divider({ strokeWidth: 0 })
               .scrollBar(BarState.Off)
               .edgeEffect(EdgeEffect.Spring)
-              .cachedCount(5, true)
+              .cachedCount(8, true)
               // 模式三：clip(false) 让 Header 滚出后穿透到 titleBar 下方做 GRADIENT_BLUR 模糊
               .clip(false)
               // 不启用 sticky header：Tab 栏随 Header 一起滚动消失（对齐原 app 设计）
               .backgroundColor($r('app.color.page_background'))
+              .onScrollIndex((_start: number, end: number) => {
+                if (this.threadCount > 0 && end >= this.threadCount - 5) {
+                  this.onReachEnd();
+                }
+              })
               .onReachEnd(() => this.onReachEnd())
             }
             .layoutWeight(1)

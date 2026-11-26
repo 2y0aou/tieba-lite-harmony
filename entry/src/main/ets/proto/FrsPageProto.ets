@@ -2,6 +2,7 @@
 // 字段编号对齐 tbclient.protobuf-main/proto/FrsPage 原定义
 // wire format 编解码复用 ProtoWire.ets
 
+import { resolveAnimatedImageUrl } from '../utils/MediaAnimation';
 import { ThreadInfo, UserInfo, MediaInfo, MediaType, PageData, ForumInfo, VideoInfo, FrsTabInfo, SortButton, TabMenu, NavTabInfo } from '../model/ForumModels';
 import { ProtoWriter, ProtoReader } from './ProtoWire';
 import { getAvatarUrl } from '../utils/AvatarUtil';
@@ -115,6 +116,9 @@ export function decodeUser(reader: ProtoReader): UserInfo {
       case 42:  // gender
         user.gender = reader.readVarint();
         break;
+      case 127: // ip_address（IP 属地）
+        user.ipAddress = reader.readString();
+        break;
       default:
         reader.skipField(tag.wireType);
         break;
@@ -131,6 +135,7 @@ function decodeMedia(reader: ProtoReader): MediaInfo {
   let bigPic: string = '';
   let srcPic: string = '';
   let originPic: string = '';
+  let dynamicPic: string = '';
 
   while (!reader.isEnd()) {
     const tag = reader.readTag();
@@ -156,6 +161,9 @@ function decodeMedia(reader: ProtoReader): MediaInfo {
       case 15:  // origin_pic
         originPic = reader.readString();
         break;
+      case 18:  // dynamic_pic
+        dynamicPic = reader.readString();
+        break;
       default:
         reader.skipField(tag.wireType);
         break;
@@ -174,6 +182,10 @@ function decodeMedia(reader: ProtoReader): MediaInfo {
   }
   // 缩略图用 small_pic
   media.thumbnail = smallPic;
+  media.animatedUrl = resolveAnimatedImageUrl(dynamicPic, media.url);
+  if (media.url.length === 0) {
+    media.url = media.animatedUrl;
+  }
   return media;
 }
 
@@ -431,11 +443,30 @@ export function decodeThread(reader: ProtoReader, users: Map<number, UserInfo>, 
         thread.createTime = reader.readVarint();
         break;
       case 59:  // is_ad（广告帖标识：非 0 视为广告，供调用方过滤）
-        thread.isAd = reader.readVarint() !== 0;
+        if (reader.readVarint() !== 0) {
+          thread.isAd = true;
+        }
+        break;
+      case 72:  // twzhibo_info（直播推广卡，过滤不显示）
+      case 113: // ala_info（贴吧直播推广卡，过滤不显示）
+        reader.skipField(tag.wireType);
+        thread.isAd = true;
+        break;
+      case 181: // isDeleted（已删除帖，过滤不显示）
+        if (reader.readVarint() !== 0) {
+          thread.isAd = true;
+        }
         break;
       case 56:  // author_id
         authorId = reader.readVarint();
         break;
+      case 124: { // agreeNum（部分推荐/列表接口仅返回外层 agreeNum 而无 field 126）
+        const agreeVal = reader.readVarint();
+        if (thread.agreeNum === 0) {
+          thread.agreeNum = agreeVal;
+        }
+        break;
+      }
       case 126: {  // agree（Agree: agree_num=1, disagree_num=4）
         const agreeReader = reader.readMessage();
         while (!agreeReader.isEnd()) {
@@ -450,6 +481,9 @@ export function decodeThread(reader: ProtoReader, users: Map<number, UserInfo>, 
         }
         break;
       }
+      case 135:  // shareNum
+        thread.shareNum = reader.readVarint();
+        break;
       case 182:  // hot_num（热榜接口专用，ThreadInfo.proto field 182）
         thread.hotNum = reader.readVarint();
         break;

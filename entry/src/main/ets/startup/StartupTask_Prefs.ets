@@ -13,7 +13,7 @@ import {
   MaterialLevelState, connectMaterialLevel, HomeDualColumnState, connectHomeDualColumn,
   ForumPageVersionState, connectForumPageVersion, ForumFabFunctionState, connectForumFabFunction,
   DefaultHomePageState, connectDefaultHomePage, ForumCommentPreviewState, connectForumCommentPreview,
-  ThreadCommentPreviewState, connectThreadCommentPreview, RecentForumsState, connectRecentForums
+  ThreadCommentPreviewState, connectThreadCommentPreview, RecentForumsState, connectRecentForums, connectTiebaUsername
 } from '../model/AppStorageV2Models';
 import { VibratorUtil } from '../utils/VibratorUtil';
 
@@ -35,6 +35,7 @@ export default class StartupTask_Prefs extends StartupTask {
       const pForumFabFunction: Promise<number> = storage.getNumber(NumberPrefs.FORUM_FAB_FUNCTION.key, -1);
       const pDefaultHomePage: Promise<number> = storage.getNumber(NumberPrefs.DEFAULT_HOME_PAGE.key, -1);
       const pForumCommentPreview: Promise<boolean> = storage.getBoolean(BooleanPrefs.FORUM_COMMENT_PREVIEW.key, false);
+      const pTiebaUsername = storage.getBoolean(BooleanPrefs.SHOW_TIEBA_USERNAME.key, false);
       const pThreadCommentPreview: Promise<boolean> = storage.getBoolean(BooleanPrefs.THREAD_COMMENT_PREVIEW.key, true);
       const pShowRecentForums: Promise<boolean> = storage.getBoolean(BooleanPrefs.SHOW_RECENT_FORUMS.key, false);
       const pOldHomeDualColumn: Promise<boolean> = storage.getBoolean(BooleanPrefs.HOME_DUAL_COLUMN.key, false);
@@ -94,6 +95,7 @@ export default class StartupTask_Prefs extends StartupTask {
       forumCommentPreviewState.value = await pForumCommentPreview;
       const threadCommentPreviewState: ThreadCommentPreviewState = connectThreadCommentPreview();
       threadCommentPreviewState.value = await pThreadCommentPreview;
+      connectTiebaUsername().value = await pTiebaUsername;
       const recentForumsState: RecentForumsState = connectRecentForums();
       recentForumsState.value = await pShowRecentForums;
       // 触感反馈偏好同步到 VibratorUtil 内存（冷启动时需 init 才能全局生效）

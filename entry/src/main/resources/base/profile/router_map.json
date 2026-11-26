@@ -79,6 +79,12 @@
       "data": {}
     },
     {
+      "name": "BrowseHistoryPage",
+      "pageSourceFile": "src/main/ets/pages/thread/BrowseHistoryPage.ets",
+      "buildFunction": "BrowseHistoryPageBuilder",
+      "data": {}
+    },
+    {
       "name": "NewThreadPage",
       "pageSourceFile": "src/main/ets/pages/thread/NewThreadPage.ets",
       "buildFunction": "NewThreadPageBuilder",

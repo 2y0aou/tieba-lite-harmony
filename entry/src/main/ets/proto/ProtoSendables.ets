@@ -12,6 +12,7 @@
 // 2. author 关联在子线程完成（用 Map<uid, SendableUserInfo> 关联），rebuild 时直接复用
 // 3. getAvatarUrl 是纯函数（AvatarUtil.ets 导出），子线程函数可 import 后调用
 
+import { resolveAnimatedImageUrl } from '../utils/MediaAnimation';
 import { collections } from '@kit.ArkTS';
 import { ProtoReader, ProtoTag } from './ProtoWire';
 import { getAvatarUrl } from '../utils/AvatarUtil';
@@ -45,6 +46,7 @@ export class SendableUserInfo {
   levelName: string = '';
   gender: number = 0;
   isBawu: boolean = false;
+  ipAddress: string = '';
 }
 
 /** Sendable MediaInfo（对应 MediaInfo 普通类，type 用 number 代替 MediaType enum） */
@@ -52,6 +54,7 @@ export class SendableUserInfo {
 export class SendableMediaInfo {
   type: number = 0;  // MediaType enum value
   url: string = '';
+  animatedUrl: string = '';
   thumbnail: string = '';
   width: number = 0;
   height: number = 0;
@@ -92,12 +95,14 @@ export class SendableThreadInfo {
   content: string = '';
   createTime: number = 0;
   replyNum: number = 0;
+  shareNum: number = 0;
   viewNum: number = 0;
   agreeNum: number = 0;
   disagreeNum: number = 0;
   isTop: boolean = false;
   isGood: boolean = false;
   isEssence: boolean = false;
+  isAd: boolean = false;
   mediaList: collections.Array<SendableMediaInfo> = new collections.Array<SendableMediaInfo>();
   forumName: string = '';
   forumInfo: SendableForumInfo = new SendableForumInfo();
@@ -242,6 +247,9 @@ export function decodeUserInline(reader: ProtoReader): SendableUserInfo {
       case 42:  // gender
         user.gender = reader.readVarint();
         break;
+      case 127: // ip_address（IP 属地）
+        user.ipAddress = reader.readString();
+        break;
       default:
         reader.skipField(tag.wireType);
         break;
@@ -257,6 +265,7 @@ export function decodeMediaInline(reader: ProtoReader): SendableMediaInfo {
   let bigPic: string = '';
   let srcPic: string = '';
   let originPic: string = '';
+  let dynamicPic: string = '';
 
   while (!reader.isEnd()) {
     const tag: ProtoTag = reader.readTag();
@@ -291,6 +300,9 @@ export function decodeMediaInline(reader: ProtoReader): SendableMediaInfo {
       case 15:  // origin_pic
         originPic = reader.readString();
         break;
+      case 18:  // dynamic_pic
+        dynamicPic = reader.readString();
+        break;
       default:
         reader.skipField(tag.wireType);
         break;
@@ -307,6 +319,10 @@ export function decodeMediaInline(reader: ProtoReader): SendableMediaInfo {
     media.url = smallPic;
   }
   media.thumbnail = smallPic;
+  media.animatedUrl = resolveAnimatedImageUrl(dynamicPic, media.url);
+  if (media.url.length === 0) {
+    media.url = media.animatedUrl;
+  }
   return media;
 }
 
@@ -347,10 +363,23 @@ export function decodePostContentInline(reader: ProtoReader): SendableContentRes
   let linkValue: string = '';
   let emojiDesc: string = '';
   let uidValue: number = 0;
+  let bigSrc: string = '';
   let cdnSrc: string = '';
   let bigCdnSrc: string = '';
   let originSrc: string = '';
+  let imageType: string = '';
+  let dynamicImage: string = '';
+  let staticImage: string = '';
+  let activeImage: string = '';
   let bsize: string = '';
+  let memePicUrl: string = '';
+  let memeThumbnail: string = '';
+  let memeWidth: number = 0;
+  let memeHeight: number = 0;
+  let tiebaplusTitle: string = '';
+  let tiebaplusDesc: string = '';
+  let tiebaplusUrl: string = '';
+  let itemName: string = '';
   let srcValue: string = '';
   let videoWidth: number = 0;
   let videoHeight: number = 0;
@@ -367,20 +396,70 @@ export function decodePostContentInline(reader: ProtoReader): SendableContentRes
       srcValue = reader.readString();
     } else if (tag.fieldNumber === 5) {
       bsize = reader.readString();
+    } else if (tag.fieldNumber === 6) {
+      bigSrc = reader.readString();
     } else if (tag.fieldNumber === 8) {
       cdnSrc = reader.readString();
     } else if (tag.fieldNumber === 9) {
       bigCdnSrc = reader.readString();
+    } else if (tag.fieldNumber === 10) {
+      imageType = reader.readString();
     } else if (tag.fieldNumber === 11) {
       emojiDesc = reader.readString();
     } else if (tag.fieldNumber === 15) {
       uidValue = reader.readVarint();
+    } else if (tag.fieldNumber === 16) {
+      dynamicImage = reader.readString();
+    } else if (tag.fieldNumber === 17) {
+      staticImage = reader.readString();
     } else if (tag.fieldNumber === 18) {
       videoWidth = reader.readVarint();
     } else if (tag.fieldNumber === 19) {
       videoHeight = reader.readVarint();
     } else if (tag.fieldNumber === 25) {
       originSrc = reader.readString();
+    } else if (tag.fieldNumber === 33) {
+      const memeReader: ProtoReader = reader.readMessage();
+      while (!memeReader.isEnd()) {
+        const mTag: ProtoTag = memeReader.readTag();
+        if (mTag.fieldNumber === 3) {
+          memePicUrl = memeReader.readString();
+        } else if (mTag.fieldNumber === 4) {
+          memeThumbnail = memeReader.readString();
+        } else if (mTag.fieldNumber === 5) {
+          memeWidth = memeReader.readVarint();
+        } else if (mTag.fieldNumber === 6) {
+          memeHeight = memeReader.readVarint();
+        } else {
+          memeReader.skipField(mTag.wireType);
+        }
+      }
+    } else if (tag.fieldNumber === 36) {
+      activeImage = reader.readString();
+    } else if (tag.fieldNumber === 40) {
+      const tpReader: ProtoReader = reader.readMessage();
+      while (!tpReader.isEnd()) {
+        const tpTag: ProtoTag = tpReader.readTag();
+        if (tpTag.fieldNumber === 1) {
+          tiebaplusTitle = tpReader.readString();
+        } else if (tpTag.fieldNumber === 2) {
+          tiebaplusDesc = tpReader.readString();
+        } else if (tpTag.fieldNumber === 3) {
+          tiebaplusUrl = tpReader.readString();
+        } else {
+          tpReader.skipField(tpTag.wireType);
+        }
+      }
+    } else if (tag.fieldNumber === 41) {
+      const itemReader: ProtoReader = reader.readMessage();
+      while (!itemReader.isEnd()) {
+        const itemTag: ProtoTag = itemReader.readTag();
+        if (itemTag.fieldNumber === 2) {
+          itemName = itemReader.readString();
+        } else {
+          itemReader.skipField(itemTag.wireType);
+        }
+      }
     } else {
       reader.skipField(tag.wireType);
     }
@@ -389,7 +468,6 @@ export function decodePostContentInline(reader: ProtoReader): SendableContentRes
   // 按 fragmentType 分发构建 fragment
   if (fragmentType === 0 || fragmentType === 9 || fragmentType === 18
       || fragmentType === 27 || fragmentType === 40) {
-    // FragText_p
     if (textValue.length > 0) {
       const frag: SendableContentFragment = new SendableContentFragment();
       frag.type = CONTENT_FRAGMENT_TEXT;
@@ -397,23 +475,28 @@ export function decodePostContentInline(reader: ProtoReader): SendableContentRes
       fragments.push(frag);
     }
   } else if (fragmentType === 1) {
-    // FragLink_p
-    const frag: SendableContentFragment = new SendableContentFragment();
-    frag.type = CONTENT_FRAGMENT_LINK;
-    frag.text = textValue;
-    frag.link = linkValue;
-    fragments.push(frag);
+    const linkLabel: string = textValue.length > 0 ? textValue : linkValue;
+    if (linkLabel.length > 0) {
+      const frag: SendableContentFragment = new SendableContentFragment();
+      frag.type = CONTENT_FRAGMENT_LINK;
+      frag.text = linkLabel;
+      frag.link = linkValue.length > 0 ? linkValue : linkLabel;
+      fragments.push(frag);
+    }
   } else if (fragmentType === 2 || fragmentType === 11) {
-    // FragEmoji_p
     if (textValue.length > 0) {
       const frag: SendableContentFragment = new SendableContentFragment();
       frag.type = CONTENT_FRAGMENT_EMOJI;
       frag.text = textValue;
       frag.emojiDesc = emojiDesc;
       fragments.push(frag);
+    } else if (emojiDesc.length > 0) {
+      const frag: SendableContentFragment = new SendableContentFragment();
+      frag.type = CONTENT_FRAGMENT_TEXT;
+      frag.text = `[${emojiDesc}]`;
+      fragments.push(frag);
     }
   } else if (fragmentType === 4) {
-    // FragAt_p
     if (textValue.length > 0) {
       const frag: SendableContentFragment = new SendableContentFragment();
       frag.type = CONTENT_FRAGMENT_AT;
@@ -421,17 +504,31 @@ export function decodePostContentInline(reader: ProtoReader): SendableContentRes
       frag.uid = uidValue;
       fragments.push(frag);
     }
-  } else if (fragmentType === 3 || fragmentType === 20) {
-    // FragImage_p
+  } else if (fragmentType === 3 || fragmentType === 20 || memePicUrl.length > 0 || memeThumbnail.length > 0) {
     const media: SendableMediaInfo = new SendableMediaInfo();
     if (originSrc.length > 0) {
       media.url = originSrc;
     } else if (bigCdnSrc.length > 0) {
       media.url = bigCdnSrc;
-    } else {
+    } else if (bigSrc.length > 0) {
+      media.url = bigSrc;
+    } else if (cdnSrc.length > 0) {
       media.url = cdnSrc;
+    } else if (srcValue.length > 0) {
+      media.url = srcValue;
+    } else if (staticImage.length > 0) {
+      media.url = staticImage;
+    } else if (memePicUrl.length > 0) {
+      media.url = memePicUrl;
+    } else {
+      media.url = memeThumbnail;
     }
-    media.thumbnail = cdnSrc;
+    media.animatedUrl = resolveAnimatedImageUrl(dynamicImage, media.url, imageType, activeImage);
+    if (media.url.length === 0) {
+      media.url = media.animatedUrl.length > 0 ? media.animatedUrl : activeImage;
+    }
+    media.thumbnail = cdnSrc.length > 0 ? cdnSrc :
+      (memeThumbnail.length > 0 ? memeThumbnail : (srcValue.length > 0 ? srcValue : media.url));
     if (bsize.length > 0) {
       const parts: string[] = bsize.split(',');
       if (parts.length >= 2) {
@@ -441,11 +538,21 @@ export function decodePostContentInline(reader: ProtoReader): SendableContentRes
         media.height = Number.isNaN(h) ? 0 : h;
       }
     }
+    if (media.width === 0 && memeWidth > 0) {
+      media.width = memeWidth;
+    }
+    if (media.height === 0 && memeHeight > 0) {
+      media.height = memeHeight;
+    }
     if (media.url.length > 0) {
       mediaList.push(media);
+    } else if (textValue.length > 0 || emojiDesc.length > 0) {
+      const frag: SendableContentFragment = new SendableContentFragment();
+      frag.type = CONTENT_FRAGMENT_TEXT;
+      frag.text = textValue.length > 0 ? textValue : `[${emojiDesc}]`;
+      fragments.push(frag);
     }
   } else if (fragmentType === 5) {
-    // FragVideo
     if (srcValue.length > 0 && linkValue.length > 0) {
       const frag: SendableContentFragment = new SendableContentFragment();
       frag.type = CONTENT_FRAGMENT_VIDEO;
@@ -455,11 +562,37 @@ export function decodePostContentInline(reader: ProtoReader): SendableContentRes
       frag.videoWidth = videoWidth;
       frag.videoHeight = videoHeight;
       fragments.push(frag);
-    } else if (textValue.length > 0) {
+    } else if (textValue.length > 0 || linkValue.length > 0) {
       const frag: SendableContentFragment = new SendableContentFragment();
       frag.type = CONTENT_FRAGMENT_LINK;
-      frag.text = textValue;
-      frag.link = textValue;
+      frag.text = textValue.length > 0 ? textValue : '[视频]';
+      frag.link = linkValue.length > 0 ? linkValue : textValue;
+      fragments.push(frag);
+    }
+  } else if (fragmentType === 10) {
+    const frag: SendableContentFragment = new SendableContentFragment();
+    frag.type = CONTENT_FRAGMENT_TEXT;
+    frag.text = '[语音]';
+    fragments.push(frag);
+  } else if (fragmentType === 35 || fragmentType === 36 || fragmentType === 37) {
+    const tpLabel: string = tiebaplusTitle.length > 0 ? tiebaplusTitle :
+      (tiebaplusDesc.length > 0 ? tiebaplusDesc : textValue);
+    if (tpLabel.length > 0) {
+      const frag: SendableContentFragment = new SendableContentFragment();
+      frag.type = tiebaplusUrl.length > 0 ? CONTENT_FRAGMENT_LINK : CONTENT_FRAGMENT_TEXT;
+      frag.text = tpLabel;
+      frag.link = tiebaplusUrl;
+      fragments.push(frag);
+    }
+  } else {
+    const fallbackText: string = textValue.length > 0 ? textValue :
+      (emojiDesc.length > 0 ? `[${emojiDesc}]` :
+        (itemName.length > 0 ? itemName :
+          (tiebaplusTitle.length > 0 ? tiebaplusTitle : linkValue)));
+    if (fallbackText.length > 0) {
+      const frag: SendableContentFragment = new SendableContentFragment();
+      frag.type = CONTENT_FRAGMENT_TEXT;
+      frag.text = fallbackText;
       fragments.push(frag);
     }
   }
@@ -549,9 +682,31 @@ export function decodeThreadInline(reader: ProtoReader, users: Map<number, Senda
       case 45:  // create_time
         thread.createTime = reader.readVarint();
         break;
+      case 59:  // is_ad（广告帖标识）
+        if (reader.readVarint() !== 0) {
+          thread.isAd = true;
+        }
+        break;
+      case 72:  // twzhibo_info（直播推广卡）
+      case 113: // ala_info（贴吧直播推广卡）
+        reader.skipField(tag.wireType);
+        thread.isAd = true;
+        break;
+      case 181: // isDeleted
+        if (reader.readVarint() !== 0) {
+          thread.isAd = true;
+        }
+        break;
       case 56:  // author_id
         authorId = reader.readVarint();
         break;
+      case 124: { // agreeNum fallback
+        const agreeVal: number = reader.readVarint();
+        if (thread.agreeNum === 0) {
+          thread.agreeNum = agreeVal;
+        }
+        break;
+      }
       case 126: {  // agree
         const agreeReader: ProtoReader = reader.readMessage();
         while (!agreeReader.isEnd()) {
@@ -566,6 +721,9 @@ export function decodeThreadInline(reader: ProtoReader, users: Map<number, Senda
         }
         break;
       }
+      case 135:  // shareNum
+        thread.shareNum = reader.readVarint();
+        break;
       case 182:  // hot_num
         thread.hotNum = reader.readVarint();
         break;
@@ -602,6 +760,9 @@ export function decodePostInline(reader: ProtoReader, users: Map<number, Sendabl
   post.tid = threadTid;
   let authorId: number = 0;
   let contentText: string = '';
+  let foldTip: string = '';
+  let hasSpriteMeme: boolean = false;
+  let embeddedAuthor: SendableUserInfo | null = null;
 
   while (!reader.isEnd()) {
     const tag: ProtoTag = reader.readTag();
@@ -653,6 +814,11 @@ export function decodePostInline(reader: ProtoReader, users: Map<number, Sendabl
       case 19:  // author_id
         authorId = reader.readVarint();
         break;
+      case 23: { // 内嵌 author
+        const authorReader: ProtoReader = reader.readMessage();
+        embeddedAuthor = decodeUserInline(authorReader);
+        break;
+      }
       case 29: {  // video_info
         const videoReader: ProtoReader = reader.readMessage();
         post.hasVideoInfo = true;
@@ -665,6 +831,8 @@ export function decodePostInline(reader: ProtoReader, users: Map<number, Sendabl
           const agreeTag: ProtoTag = agreeReader.readTag();
           if (agreeTag.fieldNumber === 1) {
             post.agreeNum = agreeReader.readVarint();
+          } else if (agreeTag.fieldNumber === 2) {
+            post.isAgreed = agreeReader.readVarint() !== 0;
           } else if (agreeTag.fieldNumber === 4) {
             post.disagreeNum = agreeReader.readVarint();
           } else {
@@ -673,9 +841,33 @@ export function decodePostInline(reader: ProtoReader, users: Map<number, Sendabl
         }
         break;
       }
+      case 44:  // fold_tip
+        foldTip = reader.readString();
+        break;
+      case 79:  // sprite_meme_info
+        hasSpriteMeme = true;
+        reader.skipField(tag.wireType);
+        break;
       default:
         reader.skipField(tag.wireType);
         break;
+    }
+  }
+
+  const hasPostVideo: boolean = post.hasVideoInfo && post.videoInfo.videoUrl.length > 0;
+  if (post.fragments.length === 0 && post.mediaList.length === 0 && !hasPostVideo) {
+    if (foldTip.length > 0) {
+      const tipFrag: SendableContentFragment = new SendableContentFragment();
+      tipFrag.type = CONTENT_FRAGMENT_TEXT;
+      tipFrag.text = foldTip;
+      post.fragments.push(tipFrag);
+      contentText = foldTip;
+    } else if (hasSpriteMeme) {
+      const memeFrag: SendableContentFragment = new SendableContentFragment();
+      memeFrag.type = CONTENT_FRAGMENT_TEXT;
+      memeFrag.text = '[贴吧表情包]';
+      post.fragments.push(memeFrag);
+      contentText = '[贴吧表情包]';
     }
   }
 
@@ -685,7 +877,14 @@ export function decodePostInline(reader: ProtoReader, users: Map<number, Sendabl
     const user: SendableUserInfo | undefined = users.get(authorId);
     if (user !== undefined) {
       post.author = user;
+    } else if (embeddedAuthor !== null) {
+      post.author = embeddedAuthor;
     }
+  } else if (embeddedAuthor !== null) {
+    post.author = embeddedAuthor;
+  }
+  if (post.author.ipAddress.length === 0 && embeddedAuthor !== null && embeddedAuthor.ipAddress.length > 0) {
+    post.author.ipAddress = embeddedAuthor.ipAddress;
   }
 
   return post;
@@ -748,6 +947,13 @@ export function decodeSubPostListInline(reader: ProtoReader, tid: number, pid: n
         }
         break;
       }
+      case 10: { // location（楼中楼 IP 属地兜底）
+        const loc: string = reader.readString();
+        if (loc.length > 0 && subPost.author.ipAddress.length === 0) {
+          subPost.author.ipAddress = loc;
+        }
+        break;
+      }
       default:
         reader.skipField(tag.wireType);
         break;
@@ -769,7 +975,11 @@ export function decodeSubPostListInline(reader: ProtoReader, tid: number, pid: n
   if (authorId > 0 && users !== undefined) {
     const user: SendableUserInfo | undefined = users.get(authorId);
     if (user !== undefined) {
+      const locFallback: string = subPost.author.ipAddress;
       subPost.author = user;
+      if (subPost.author.ipAddress.length === 0 && locFallback.length > 0) {
+        subPost.author.ipAddress = locFallback;
+      }
     }
   }
   if (subPost.author.uid === 0 && authorId > 0) {

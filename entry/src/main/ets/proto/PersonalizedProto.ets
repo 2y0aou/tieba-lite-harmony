@@ -139,8 +139,8 @@ export function decodePersonalizedRes(bytes: Uint8Array): PersonalizedResult {
           // thread_list（repeated ThreadInfo），复用 FrsPageProto.decodeThread
           const threadReader = dataReader.readMessage();
           const thread = decodeThread(threadReader, emptyUsers, '');
-          // 过滤广告帖（is_ad 非 0）（#288）
-          if (!thread.isAd) {
+          // 过滤广告帖与无效占位帖（is_ad / 直播推广 / 无 tid）
+          if (!thread.isAd && thread.tid > 0) {
             result.threads.push(thread);
           }
         } else {

@@ -219,6 +219,7 @@ struct ConcernTab {
     if (this.refreshRequestId === 0) {
       return;
     }
+    this.scroller.scrollEdge(Edge.Top);
     this.isRefreshing = true;
     this.loadThreads(true).then(() => {
       this.isRefreshing = false;
@@ -359,7 +360,6 @@ struct ConcernTab {
               onCommentClick: () => this.showCommentToast()
             })
           }
-          .margin({ top: 4, bottom: 4 })
         }, (thread: ThreadInfo, index: number) => `${thread.tid}`)
 
         if (this.isLoading && this.threadCount > 0) {
@@ -374,11 +374,14 @@ struct ConcernTab {
       .divider({ strokeWidth: 0 })
       .scrollBar(BarState.Off)
       .edgeEffect(EdgeEffect.Spring)
-      .cachedCount(5, true)
+      .cachedCount(8, true)
       .clip(false)
-      // #166 模式三：backgroundColor 避免穿透区域灰色遮罩，top:8 小间距（避让由外层 Column 处理）
-      .padding({ top: 8, left: 16, right: 16 })
-      .backgroundColor($r('app.color.page_background'))
+      .backgroundColor($r('app.color.card_background'))
+      .onScrollIndex((_start: number, end: number) => {
+        if (this.threadCount > 0 && end >= this.threadCount - 5) {
+          this.onReachEnd();
+        }
+      })
       .onReachEnd(() => this.onReachEnd())
       }
       // #166 穿透修复：Refresh 默认裁剪子内容，会截断 List 的 clip(false) 穿透链，
@@ -454,6 +457,7 @@ struct PersonalizedTab {
     if (this.refreshRequestId === 0) {
       return;
     }
+    this.scroller.scrollEdge(Edge.Top);
     this.isRefreshing = true;
     this.loadThreads(true).then(() => {
       this.isRefreshing = false;
@@ -572,7 +576,6 @@ struct PersonalizedTab {
               onCommentClick: () => this.showCommentToast()
             })
           }
-          .margin({ top: 4, bottom: 4 })
         }, (thread: ThreadInfo, index: number) => `${thread.tid}`)
 
         if (this.isLoading && this.threadCount > 0) {
@@ -587,11 +590,14 @@ struct PersonalizedTab {
       .divider({ strokeWidth: 0 })
       .scrollBar(BarState.Off)
       .edgeEffect(EdgeEffect.Spring)
-      .cachedCount(5, true)
+      .cachedCount(8, true)
       .clip(false)
-      // #166 模式三：backgroundColor 避免穿透区域灰色遮罩，top:8 小间距（避让由外层 Column 处理）
-      .padding({ top: 8, left: 16, right: 16 })
-      .backgroundColor($r('app.color.page_background'))
+      .backgroundColor($r('app.color.card_background'))
+      .onScrollIndex((_start: number, end: number) => {
+        if (this.threadCount > 0 && end >= this.threadCount - 5) {
+          this.onReachEnd();
+        }
+      })
       .onReachEnd(() => this.onReachEnd())
       }
       // #166 穿透修复：Refresh 默认裁剪子内容，会截断 List 的 clip(false) 穿透链，
@@ -665,6 +671,7 @@ struct HotTab {
     if (this.refreshRequestId === 0) {
       return;
     }
+    this.scroller.scrollEdge(Edge.Top);
     this.isRefreshing = true;
     this.loadHot().then(() => {
       this.isRefreshing = false;
@@ -858,10 +865,10 @@ struct HotTab {
               }
               .width('100%')
               .justifyContent(FlexAlign.End)
-              .padding({ bottom: 8 })
+              .padding({ right: 16, bottom: 8 })
+              .backgroundColor($r('app.color.card_background'))
             }
           }
-          .margin({ top: 4, bottom: 4, left: 16, right: 16 })
         }, (thread: ThreadInfo, index: number) => `${thread.tid}`)
 
         if (this.isLoading) {
@@ -1116,7 +1123,7 @@ export struct FavoritePage {
           .layoutWeight(1)
           // #166 模式三：Tabs clip(false) 让 List 穿透内容穿过 Tabs 到达 Column padding 区域
           .clip(false)
-          .backgroundColor($r('app.color.page_background'))
+          .backgroundColor($r('app.color.card_background'))
           .onChange((index: number) => {
             this.currentTab = index;
           })
@@ -1127,7 +1134,7 @@ export struct FavoritePage {
       // #166 外层 Column padding top 避让状态栏 + titleBar(48) + Tab 栏(44)
       // titleBar 总高度 = TITLE_BAR_HEIGHT + FAVORITE_TAB_BAR_HEIGHT
       .padding({ top: this.statusBarHeight + TITLE_BAR_HEIGHT + FAVORITE_TAB_BAR_HEIGHT })
-      .backgroundColor($r('app.color.page_background'))
+      .backgroundColor($r('app.color.card_background'))
     }
     .titleBar({
       content: {
@@ -1158,7 +1165,7 @@ export struct FavoritePage {
     })
     .bindToScrollable([this.concernScroller, this.personalizedScroller, this.hotScroller])
     .hideBackButton(true)
-    .backgroundColor($r('app.color.page_background'))
+    .backgroundColor($r('app.color.card_background'))
   }
 
   // #166 Tab 栏 Builder（作为 titleBar 的 bottomBuilder）

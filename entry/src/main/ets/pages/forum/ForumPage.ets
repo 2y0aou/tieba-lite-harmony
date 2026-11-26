@@ -461,7 +461,6 @@ export struct ForumPage {
                     onCommentClick: () => this.showCommentToast()
                   })
                 }
-                .margin({ top: 4, bottom: 4 })
               }, (thread: ThreadInfo, index: number) => `${thread.tid}`)
 
               if (this.viewModel.loadingState.isLoading && this.threadCount > 0) {
@@ -475,11 +474,15 @@ export struct ForumPage {
             .divider({ strokeWidth: 0 })
             .scrollBar(BarState.Off)
             .edgeEffect(EdgeEffect.Spring)
-            .cachedCount(5, true)
-            .padding({ left: 16, right: 16 })
+            .cachedCount(8, true)
             // 模式三：clip(false) 让内容穿透到 titleBar 下方，titleBar 对穿透内容做模糊
             .clip(false)
             .backgroundColor($r('app.color.page_background'))
+            .onScrollIndex((_start: number, end: number) => {
+              if (this.threadCount > 0 && end >= this.threadCount - 5) {
+                this.onReachEnd();
+              }
+            })
             .onReachEnd(() => this.onReachEnd())
           }
           .layoutWeight(1)

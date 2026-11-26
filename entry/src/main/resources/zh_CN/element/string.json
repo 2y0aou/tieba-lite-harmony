@@ -24,6 +24,78 @@
     { "name": "scan_qrcode", "value": "识别二维码" },
     { "name": "scan_qrcode_result", "value": "识别结果" },
     { "name": "scan_qrcode_no_result", "value": "未识别到二维码" },
-    { "name": "scan_qrcode_failed", "value": "二维码识别失败" }
+    { "name": "scan_qrcode_failed", "value": "二维码识别失败" },
+    {
+      "name": "android_forum_name",
+      "value": "%s吧"
+    },
+    {
+      "name": "android_agree",
+      "value": "点赞"
+    },
+    {
+      "name": "android_dislike",
+      "value": "点踩"
+    },
+    {
+      "name": "android_undo_dislike",
+      "value": "取消点踩"
+    },
+    {
+      "name": "android_reply_count",
+      "value": "回复 %d"
+    },
+    {
+      "name": "android_reply_time_floor",
+      "value": "%1$s · %2$d楼"
+    },
+    {
+      "name": "android_author_level",
+      "value": "Lv.%d"
+    },
+    {
+      "name": "reply_to_floor",
+      "value": "回复本楼"
+    },
+    {
+      "name": "settings_show_tieba_username",
+      "value": "同时显示贴吧用户名"
+    },
+    {
+      "name": "settings_show_tieba_username_desc",
+      "value": "将作者名称显示为「昵称（用户名）」"
+    },
+    {
+      "name": "profile_browse_history",
+      "value": "浏览记录"
+    },
+    {
+      "name": "browse_history_title",
+      "value": "浏览记录"
+    },
+    {
+      "name": "browse_history_empty",
+      "value": "暂无浏览记录"
+    },
+    {
+      "name": "browse_history_delete",
+      "value": "删除"
+    },
+    {
+      "name": "browse_history_clear_title",
+      "value": "清空浏览记录"
+    },
+    {
+      "name": "browse_history_clear_message",
+      "value": "确定要清空全部本地浏览记录吗？"
+    },
+    {
+      "name": "browse_history_clear_action",
+      "value": "清空"
+    },
+    {
+      "name": "browse_history_cleared",
+      "value": "已清空浏览记录"
+    }
   ]
 }

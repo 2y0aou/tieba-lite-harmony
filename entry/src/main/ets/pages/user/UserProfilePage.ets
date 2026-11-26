@@ -1,6 +1,6 @@
 import { HdsNavDestination, ScrollEffectType, hdsMaterial } from '@kit.UIDesignKit';
 import { TiebaAPI } from '../../api/TiebaAPI';
-import { ImageLoadTypeState, IsWifiState, SafeBottomState, connectImageLoadType, connectIsWifi, MaterialLevelState, connectMaterialLevel } from '../../model/AppStorageV2Models';
+import { ImageLoadTypeState, IsWifiState, SafeBottomState, connectImageLoadType, connectIsWifi, MaterialLevelState, connectMaterialLevel, connectTiebaUsername, TiebaUsernameState } from '../../model/AppStorageV2Models';
 import { MATERIAL_TYPE_IMMERSIVE, resolveMaterialLevel } from '../../theme/MaterialUtil';
 import { UserProfileInfo } from '../../model/UserProfileModels';
 import { ThreadInfo, ForumInfo, SelfFollowForum, PageData } from '../../model/ForumModels';
@@ -16,6 +16,7 @@ import { VibratorUtil } from '../../utils/VibratorUtil';
 import { RouterUtil, ThreadNavParams, UserProfileNavParams, FollowsNavParams } from '../../utils/RouterUtil';
 import { getStatusBarHeight } from '../../utils/StatusBarUtil';
 import { Logger } from '../../utils/Logger';
+import { formatTiebaName } from '../../utils/TiebaName';
 
 const TAG: string = 'UserProfilePage';
 
@@ -54,6 +55,7 @@ export struct UserProfilePage {
   /** 路由传入的头像标识，作为 panel API 主查询参数 */
   @Local portrait: string = '';
   /** 路由传入的用户名，portrait 为空时作为 fallback */
+  @Local tiebaUsernameState: TiebaUsernameState = connectTiebaUsername();
   @Local userName: string = '';
   /** 路由传入的旧版 user_id，仅用于回填到 UserProfileInfo.uid */
   @Local uid: number = 0;
@@ -471,11 +473,11 @@ export struct UserProfilePage {
 
         Column() {
           Row() {
-            Text(this.profile.nickName.length > 0 ? this.profile.nickName : this.profile.userName)
+            Text(formatTiebaName(this.profile.nickName, this.profile.userName, this.tiebaUsernameState.value))
               .fontSize(22)
               .fontWeight(FontWeight.Bold)
               .fontColor($r('app.color.text_primary'))
-              .maxLines(1)
+              .maxLines(this.tiebaUsernameState.value ? 2 : 1)
               .textOverflow({ overflow: TextOverflow.Ellipsis })
 
             if (this.profile.isVip) {
@@ -490,7 +492,8 @@ export struct UserProfilePage {
           }
           .alignItems(VerticalAlign.Center)
 
-          if (this.profile.userName.length > 0 && this.profile.userName !== this.profile.nickName) {
+          if (!this.tiebaUsernameState.value && this.profile.nickName.length > 0 &&
+            this.profile.userName.length > 0 && this.profile.userName !== this.profile.nickName) {
             Text(this.profile.userName)
               .fontSize(12)
               .fontColor($r('app.color.text_secondary'))

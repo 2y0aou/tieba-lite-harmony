@@ -443,7 +443,7 @@ export struct ReplyBox {
         ForEach(this.emoticons, (emoticon: EmoticonInfo, idx: number) => {
           GridItem() {
             Column() {
-              Image(EmoticonManager.getEmoticonUrl(emoticon.id))
+              Image(EmoticonManager.getEmoticonResource(emoticon.id))
                 .width(32)
                 .height(32)
                 .objectFit(ImageFit.Contain)
@@ -830,10 +830,14 @@ export struct ReplyBox {
             Span(frag.text)
               .fontColor(this.themeState.primary)
           } else if (frag.type === ContentFragmentType.EMOJI) {
-            ImageSpan(EmoticonManager.getEmoticonUrl(frag.text))
-              .width(16)
-              .height(16)
-              .verticalAlign(ImageSpanAlignment.CENTER)
+            if (EmoticonManager.hasRenderableEmoticon(frag.text)) {
+              ImageSpan(EmoticonManager.getEmoticonResource(frag.text))
+                .width(16)
+                .height(16)
+                .verticalAlign(ImageSpanAlignment.CENTER)
+            } else {
+              Span(EmoticonManager.getFallbackLabel(frag.text, frag.emojiDesc))
+            }
           } else {
             Span(frag.text)
           }

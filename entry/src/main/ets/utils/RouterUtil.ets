@@ -172,6 +172,8 @@ export class RouterUtil {
   static readonly ROUTE_THREAD_PAGE: string = 'ThreadPage';
   /** 收藏帖列表页 */
   static readonly ROUTE_THREAD_STORE_PAGE: string = 'ThreadStorePage';
+  /** 浏览记录页 */
+  static readonly ROUTE_BROWSE_HISTORY_PAGE: string = 'BrowseHistoryPage';
   /** 发帖页 */
   static readonly ROUTE_NEW_THREAD_PAGE: string = 'NewThreadPage';
   /** 楼中楼子帖页 */
