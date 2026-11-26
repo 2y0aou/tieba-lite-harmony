@@ -649,13 +649,38 @@ struct PostItem {
                 Span(formatTiebaName(subPost.author.nickname, subPost.author.name, this.showUsername) ||
                   SUB_POST_ANONYMOUS_NAME)
                   .fontColor(this.themeState.primary)
-                // content 为空时不渲染冒号 Span，避免单独冒号
-                if (subPost.content.length > 0) {
+                if (subPost.fragments.length > 0) {
+                  Span('：')
+                    .fontColor($r('app.color.text_primary'))
+                  ForEach(subPost.fragments, (frag: ContentFragment, fIdx: number) => {
+                    if (frag.type === ContentFragmentType.EMOJI) {
+                      if (EmoticonManager.hasRenderableEmoticon(frag.text)) {
+                        ImageSpan(EmoticonManager.getEmoticonResource(frag.text))
+                          .width(15)
+                          .height(15)
+                          .verticalAlign(ImageSpanAlignment.CENTER)
+                      } else {
+                        Span(EmoticonManager.getFallbackLabel(frag.text, frag.emojiDesc))
+                          .fontColor($r('app.color.text_primary'))
+                      }
+                    } else if (frag.type === ContentFragmentType.LINK || frag.type === ContentFragmentType.AT) {
+                      Span(frag.text)
+                        .fontColor(this.themeState.primary)
+                    } else if (frag.type === ContentFragmentType.VIDEO) {
+                      Span('[视频]')
+                        .fontColor($r('app.color.text_secondary'))
+                    } else {
+                      Span(frag.text)
+                        .fontColor($r('app.color.text_primary'))
+                    }
+                  }, (frag: ContentFragment, fIdx: number) => `sp_prev_${subPost.spid}_${fIdx}_${frag.type}_${frag.text}`)
+                } else if (subPost.content.length > 0) {
                   Span('：' + subPost.content)
                     .fontColor($r('app.color.text_primary'))
                 }
               }
               .fontSize(13)
+              .lineHeight(19)
               .maxLines(4)
               .textOverflow({ overflow: TextOverflow.Ellipsis })
               .width('100%')
@@ -2213,31 +2238,37 @@ export struct ThreadPage {
         }
       })
 
-      Divider().strokeWidth(0.5).color($r('app.color.divider'))
-      Row({ space: 8 }) {
-        SymbolGlyph($r('sys.symbol.message'))
-          .fontSize(15)
-          .fontColor([$r('app.color.text_caption')])
-        Text($r('app.string.reply_to_floor'))
-          .fontSize(14)
-          .fontColor($r('app.color.text_secondary'))
-          .layoutWeight(1)
+      Column() {
+        Divider().strokeWidth(0.5).color($r('app.color.divider'))
+        Row({ space: 8 }) {
+          SymbolGlyph($r('sys.symbol.message'))
+            .fontSize(15)
+            .fontColor([$r('app.color.text_caption')])
+          Text($r('app.string.reply_to_floor'))
+            .fontSize(14)
+            .fontColor($r('app.color.text_secondary'))
+            .layoutWeight(1)
+        }
+        .width('100%')
+        .height(40)
+        .padding({ left: 14, right: 14 })
+        .borderRadius(20)
+        .backgroundColor($r('app.color.input_background'))
+        .alignItems(VerticalAlign.Center)
+        .margin({ top: 10, bottom: Math.max(12, this.safeBottomState.value) })
+        .onClick(() => {
+          if (this.commentsDrawerPost) {
+            this.openReplyBox(this.commentsDrawerPost);
+          }
+        })
       }
       .width('100%')
-      .height(40)
-      .padding({ left: 14, right: 14 })
-      .borderRadius(20)
-      .backgroundColor($r('app.color.input_background'))
-      .alignItems(VerticalAlign.Center)
-      .margin({ top: 10, bottom: Math.max(12, this.safeBottomState.value) })
-      .onClick(() => {
-        if (this.commentsDrawerPost) {
-          this.openReplyBox(this.commentsDrawerPost);
-        }
-      })
+      .backgroundColor($r('app.color.card_background'))
+      .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.BOTTOM])
     }
     .width('100%')
     .height('100%')
+    .justifyContent(FlexAlign.SpaceBetween)
     .padding({ left: 16, right: 16 })
     .backgroundColor($r('app.color.card_background'))
   }
@@ -2357,6 +2388,7 @@ export struct ThreadPage {
     .onReachEnd(() => this.onReachEnd())
     .bindSheet($$this.showCommentsDrawer, this.CommentsDrawer(), {
       detents: ['76%', SheetSize.LARGE],
+      scrollSizeMode: ScrollSizeMode.CONTINUOUS,
       preferType: SheetType.BOTTOM,
       dragBar: true,
       showClose: true,

@@ -1,6 +1,7 @@
 import { common } from '@kit.AbilityKit';
 import { systemShare } from '@kit.ShareKit';
-import { ThreadInfo, MediaInfo, SubPostInfo } from '../model/ForumModels';
+import { ThreadInfo, MediaInfo, SubPostInfo, ContentFragment, ContentFragmentType } from '../model/ForumModels';
+import { EmoticonManager } from '../utils/EmoticonManager';
 import { formatRelativeTime } from '../utils/TimeUtil';
 import { getMediaImageUrl, getAvatarImageUrl } from '../utils/ImageLoadUtil';
 import { connectTheme, ThemeState } from '../theme/ThemeManager';
@@ -331,10 +332,38 @@ export struct ThreadCard {
             Span(formatTiebaName(post.author.nickname, post.author.name, this.tiebaUsernameState.value) ||
               SUB_POST_ANONYMOUS_NAME)
               .fontColor(this.themeState.primary)
-            Span('：' + post.content)
-              .fontColor($r('app.color.text_primary'))
+            if (post.fragments.length > 0) {
+              Span('：')
+                .fontColor($r('app.color.text_primary'))
+              ForEach(post.fragments, (frag: ContentFragment, fIdx: number) => {
+                if (frag.type === ContentFragmentType.EMOJI) {
+                  if (EmoticonManager.hasRenderableEmoticon(frag.text)) {
+                    ImageSpan(EmoticonManager.getEmoticonResource(frag.text))
+                      .width(15)
+                      .height(15)
+                      .verticalAlign(ImageSpanAlignment.CENTER)
+                  } else {
+                    Span(EmoticonManager.getFallbackLabel(frag.text, frag.emojiDesc))
+                      .fontColor($r('app.color.text_primary'))
+                  }
+                } else if (frag.type === ContentFragmentType.LINK || frag.type === ContentFragmentType.AT) {
+                  Span(frag.text)
+                    .fontColor(this.themeState.primary)
+                } else if (frag.type === ContentFragmentType.VIDEO) {
+                  Span('[视频]')
+                    .fontColor($r('app.color.text_secondary'))
+                } else {
+                  Span(frag.text)
+                    .fontColor($r('app.color.text_primary'))
+                }
+              }, (frag: ContentFragment, fIdx: number) => `hp_prev_${post.spid}_${fIdx}_${frag.type}_${frag.text}`)
+            } else if (post.content.length > 0) {
+              Span('：' + post.content)
+                .fontColor($r('app.color.text_primary'))
+            }
           }
           .fontSize(13)
+          .lineHeight(19)
           .maxLines(4)
           .textOverflow({ overflow: TextOverflow.Ellipsis })
           .width('100%')
