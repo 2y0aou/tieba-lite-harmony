@@ -1,0 +1,2 @@
+# Include ArkTS source files in GitHub language statistics.
+*.ets linguist-language=TypeScript linguist-detectable=true
