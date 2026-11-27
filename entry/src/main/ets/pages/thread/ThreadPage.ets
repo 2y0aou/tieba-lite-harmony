@@ -1572,7 +1572,11 @@ export struct ThreadPage {
       this.switchContentTab(1, false);
     }
     this.loadPosts(true).then(() => {
-      this.scrollToTopSoon(0);
+      if (this.activeTab === 0 && fromReplyHeader && this.hasFirstPostHeader()) {
+        this.articleScroller.scrollToIndex(1, false);
+      } else {
+        this.scrollToTopSoon(0);
+      }
     }).catch((err: Error) => {
       Logger.error(TAG, `[ThreadPage] toggleOnlyAuthor reload failed: ${err.message}`);
     });
@@ -1582,17 +1586,22 @@ export struct ThreadPage {
    * #70 切换回复排序（0=正序, 1=倒序, 2=热门）
    * 持久化到 AppStorage，同步到 ViewModel，重新加载第一页
    */
-  changeSort(sort: number): void {
+  changeSort(sort: number, fromReplyHeader: boolean = false): void {
     if (sort === this.sortOrder) {
       return;
     }
     this.sortOrder = sort;
     AppStorage.setOrCreate<number>('thread_default_sort', sort);
     this.viewModel.setSort(sort);
-    this.switchContentTab(1, false);
+    if (!fromReplyHeader) {
+      this.switchContentTab(1, false);
+    }
     this.loadPosts(true).then(() => {
-      // 列表已整体换页，回到顶部（对齐跳页行为）
-      this.scrollToTopSoon();
+      if (this.activeTab === 0 && fromReplyHeader && this.hasFirstPostHeader()) {
+        this.articleScroller.scrollToIndex(1, false);
+      } else {
+        this.scrollToTopSoon(0);
+      }
     }).catch((err: Error) => {
       Logger.error(TAG, `[ThreadPage] changeSort reload failed: ${err.message}`);
     });
@@ -1770,7 +1779,7 @@ export struct ThreadPage {
    * 排序二级菜单（showActionMenu 限制 6 项，排序 3 项拆为二级菜单）
    * 正序 / 倒序 / 热门，当前排序前加 ✓ 标记
    */
-  private showSortMenu(): void {
+  private showSortMenu(fromReplyHeader: boolean = false): void {
     this.getUIContext().getPromptAction().showActionMenu({
       title: getResourceString($r('app.string.menu_sort')),
       buttons: [
@@ -1783,9 +1792,9 @@ export struct ThreadPage {
       ]
     }).then((result) => {
       switch (result.index) {
-        case 0: this.changeSort(0); break;
-        case 1: this.changeSort(1); break;
-        case 2: this.changeSort(2); break;
+        case 0: this.changeSort(0, fromReplyHeader); break;
+        case 1: this.changeSort(1, fromReplyHeader); break;
+        case 2: this.changeSort(2, fromReplyHeader); break;
         default: break;
       }
     }).catch((err: Error) => {
@@ -2420,159 +2429,121 @@ export struct ThreadPage {
       })
   }
 
+  /** 评论区楼层列表公共内容（Tab 0 正文下方 & Tab 1 左滑纯评论页共用，同源实时同步） */
+  @Builder
+  ReplyListGroup(keyPrefix: string) {
+    ListItemGroup({ header: this.ReplyFilters() }) {
+      this.LoadPrevButton()
+
+      if (this.isLoading && this.postCount === 0) {
+        ListItem() {
+          LoadingView({ message: getResourceString($r('app.string.loading')) })
+            .height(160)
+        }
+      } else if (!this.isLoading && this.postCount === 0) {
+        ListItem() {
+          Column({ space: 8 }) {
+            Text(this.onlyAuthorMode ? '楼主暂未发布其他回复' : '暂无评论，快来抢沙发')
+              .fontSize(14)
+              .fontColor($r('app.color.text_secondary'))
+          }
+          .width('100%')
+          .padding({ top: 56, bottom: 56 })
+          .alignItems(HorizontalAlign.Center)
+        }
+      } else {
+        LazyForEach(this.dataSource, (post: PostInfo, index: number) => {
+          ListItem() {
+            PostItem({
+              post: post,
+              isAuthor: isSameTiebaAuthor(post.author, this.threadAuthor.uid, this.threadAuthor.portrait,
+                this.threadAuthor.name),
+              threadAuthorUid: this.threadAuthor.uid,
+              threadAuthorPortrait: this.threadAuthor.portrait,
+              threadAuthorName: this.threadAuthor.name,
+              immersiveMode: this.isImmersiveMode,
+              imageLoadType: this.imageLoadTypeState.value,
+              isWifi: this.isWifiState.value,
+              themeState: this.themeState,
+              commentPreviewEnabled: this.commentPreviewState.value,
+              showUsername: this.tiebaUsernameState.value,
+              onAgreeClick: (p: PostInfo) => {
+                this.handleAgree(p).catch((err: Error) => {
+                  Logger.error(TAG, `[ThreadPage] handleAgree failed: ${err.message}`);
+                });
+              },
+              onDisagreeClick: (p: PostInfo) => {
+                this.handleDisagree(p).catch((err: Error) => {
+                  Logger.error(TAG, `[ThreadPage] handleDisagree failed: ${err.message}`);
+                });
+              },
+              onViewReplies: () => this.openCommentsDrawer(post),
+              onReply: () => this.openReplyBox(post),
+              onAuthorClick: () => this.navigateToUserProfile(
+                post.author.portrait,
+                post.author.name,
+                post.author.uid
+              ),
+              onAtClick: (uid: number, name: string) => this.navigateToUserProfile('', name, uid),
+              onLinkClick: (url: string) => this.openLinkUrl(url)
+            })
+          }
+        }, (post: PostInfo) => `${keyPrefix}_${post.pid}`)
+      }
+
+      if (this.isLoading && this.postCount > 0) {
+        ListItem() {
+          LoadingView({ message: getResourceString($r('app.string.loading_more')) })
+            .height(60)
+            .margin({ left: 0, right: 0 })
+        }
+      }
+
+      // 悬浮底栏模式下的列表末尾透明避让区：既不截断内容（允许滚到悬浮胶囊后穿透模糊），又确保末楼不被遮挡
+      ListItem()
+        .height(this.threadFloatingBarState.value && !this.isImmersiveMode ?
+          FLOATING_BAR_HEIGHT + FLOATING_BAR_BOTTOM_MARGIN + 20 : 12)
+    }
+  }
+
   @Builder
   PostList() {
-    // 小黑盒式原生 Tabs 双页签：Tab 0 = 正文，Tab 1 = 评论，跟手左右滑动切换且原生拦截子项误触点击
+    // 小黑盒式原生 Tabs 双页签：
+    // - Tab 0：完整阅读流（正文 + 下方紧接评论区，支持正常一路往下滑看评论）
+    // - Tab 1：纯评论直达页（正文页任意位置左滑瞬间切过来，右滑跟手返回原正文位置）
     Tabs({
       barPosition: BarPosition.Start,
       index: this.activeTab,
       controller: this.contentTabsController
     }) {
-      // Tab 0：正文独立阅读页（保留独立滚动进度）
+      // Tab 0：正文 + 评论完整流
       TabContent() {
         List({ scroller: this.articleScroller }) {
-          if (this.isLoading && !this.hasFirstPostHeader()) {
-            ListItem() {
-              LoadingView({ message: getResourceString($r('app.string.loading')) })
-                .height(220)
-            }
-          } else {
-            this.FirstPostHeader()
-
-            // 正文与评论衔接轻提示条（非顶栏）：展示「正文 · 评论 N」，点击或左滑跟手进入评论页
-            if (this.hasFirstPostHeader()) {
-              ListItem() {
-                Row() {
-                  Row({ space: 8 }) {
-                    Text('正文')
-                      .fontSize(13.5)
-                      .fontWeight(FontWeight.Bold)
-                      .fontColor($r('app.color.text_primary'))
-                    Text('/')
-                      .fontSize(12)
-                      .fontColor($r('app.color.text_caption'))
-                    Text(this.threadReplyNum > 1
-                      ? `评论 ${Math.max(0, this.threadReplyNum - 1)}`
-                      : '评论')
-                      .fontSize(13.5)
-                      .fontWeight(FontWeight.Medium)
-                      .fontColor(this.themeState.primary)
-                  }
-                  .alignItems(VerticalAlign.Center)
-                  Blank()
-                  Row({ space: 4 }) {
-                    Text('左滑看评论')
-                      .fontSize(12)
-                      .fontColor($r('app.color.text_caption'))
-                    SymbolGlyph($r('sys.symbol.chevron_right'))
-                      .fontSize(13)
-                      .fontColor([$r('app.color.text_caption')])
-                  }
-                  .alignItems(VerticalAlign.Center)
-                }
-                .width('100%')
-                .padding({ left: 16, right: 16, top: 14, bottom: 14 })
-                .backgroundColor($r('app.color.android_post_background'))
-                .alignItems(VerticalAlign.Center)
-                .onClick(() => {
-                  this.switchContentTab(1);
-                })
-              }
-            }
-          }
-
-          // 悬浮底栏模式下的正文末尾透明避让区
-          ListItem()
-            .height(this.threadFloatingBarState.value && !this.isImmersiveMode ?
-              FLOATING_BAR_HEIGHT + FLOATING_BAR_BOTTOM_MARGIN + 20 : 16)
+          this.FirstPostHeader()
+          this.ReplyListGroup('main')
         }
         .width('100%')
         .height('100%')
         .divider({ strokeWidth: 0 })
         .scrollBar(BarState.Off)
         .edgeEffect(EdgeEffect.Spring, { alwaysEnabled: true })
+        .cachedCount(6, true)
         .clip(false)
         .backgroundColor($r('app.color.android_post_background'))
+        .onScrollIndex((_start: number, end: number) => {
+          if (this.postCount > 0 && end >= this.postCount - 4 && this.hasMore && !this.isLoading) {
+            this.onReachEnd();
+          }
+        })
+        .onReachEnd(() => this.onReachEnd())
       }
       .tabBar('')
       .clip(false)
 
-      // Tab 1：评论独立楼层页（与小黑盒评论页对齐，支持排序/只看楼主/楼中楼抽屉）
+      // Tab 1：左滑直达的纯净评论页
       TabContent() {
         List({ scroller: this.scroller }) {
-          ListItemGroup({ header: this.ReplyFilters() }) {
-            this.LoadPrevButton()
-
-            if (this.isLoading && this.postCount === 0) {
-              ListItem() {
-                LoadingView({ message: getResourceString($r('app.string.loading')) })
-                  .height(180)
-              }
-            } else if (!this.isLoading && this.postCount === 0) {
-              ListItem() {
-                Column({ space: 8 }) {
-                  Text(this.onlyAuthorMode ? '楼主暂未发布其他回复' : '暂无评论，快来抢沙发')
-                    .fontSize(14)
-                    .fontColor($r('app.color.text_secondary'))
-                }
-                .width('100%')
-                .padding({ top: 72, bottom: 72 })
-                .alignItems(HorizontalAlign.Center)
-              }
-            } else {
-              // 楼层列表
-              LazyForEach(this.dataSource, (post: PostInfo, index: number) => {
-                ListItem() {
-                  PostItem({
-                    post: post,
-                    isAuthor: isSameTiebaAuthor(post.author, this.threadAuthor.uid, this.threadAuthor.portrait,
-                      this.threadAuthor.name),
-                    threadAuthorUid: this.threadAuthor.uid,
-                    threadAuthorPortrait: this.threadAuthor.portrait,
-                    threadAuthorName: this.threadAuthor.name,
-                    immersiveMode: this.isImmersiveMode,
-                    imageLoadType: this.imageLoadTypeState.value,
-                    isWifi: this.isWifiState.value,
-                    themeState: this.themeState,
-                    commentPreviewEnabled: this.commentPreviewState.value,
-                    showUsername: this.tiebaUsernameState.value,
-                    onAgreeClick: (p: PostInfo) => {
-                      this.handleAgree(p).catch((err: Error) => {
-                        Logger.error(TAG, `[ThreadPage] handleAgree failed: ${err.message}`);
-                      });
-                    },
-                    onDisagreeClick: (p: PostInfo) => {
-                      this.handleDisagree(p).catch((err: Error) => {
-                        Logger.error(TAG, `[ThreadPage] handleDisagree failed: ${err.message}`);
-                      });
-                    },
-                    onViewReplies: () => this.openCommentsDrawer(post),
-                    onReply: () => this.openReplyBox(post),
-                    onAuthorClick: () => this.navigateToUserProfile(
-                      post.author.portrait,
-                      post.author.name,
-                      post.author.uid
-                    ),
-                    onAtClick: (uid: number, name: string) => this.navigateToUserProfile('', name, uid),
-                    onLinkClick: (url: string) => this.openLinkUrl(url)
-                  })
-                }
-              }, (post: PostInfo) => `${post.pid}`)
-            }
-
-            if (this.isLoading && this.postCount > 0) {
-              ListItem() {
-                LoadingView({ message: getResourceString($r('app.string.loading_more')) })
-                  .height(60)
-                  .margin({ left: 0, right: 0 })
-              }
-            }
-
-            // 悬浮底栏模式下的列表末尾透明避让区：既不截断内容（允许滚到悬浮胶囊后穿透模糊），又确保末楼不被遮挡
-            ListItem()
-              .height(this.threadFloatingBarState.value && !this.isImmersiveMode ?
-                FLOATING_BAR_HEIGHT + FLOATING_BAR_BOTTOM_MARGIN + 20 : 12)
-          }
+          this.ReplyListGroup('reply')
         }
         .width('100%')
         .height('100%')
@@ -2854,31 +2825,10 @@ export struct ThreadPage {
   @Builder
   ReplyFilters() {
     Row() {
-      Row({ space: 6 }) {
-        if (this.hasFirstPostHeader()) {
-          Row({ space: 2 }) {
-            SymbolGlyph($r('sys.symbol.chevron_left'))
-              .fontSize(12)
-              .fontColor([$r('app.color.text_secondary')])
-            Text('正文')
-              .fontSize(12.5)
-              .fontColor($r('app.color.text_secondary'))
-          }
-          .height(26)
-          .padding({ left: 6, right: 8 })
-          .borderRadius(999)
-          .backgroundColor($r('app.color.input_background'))
-          .alignItems(VerticalAlign.Center)
-          .onClick(() => {
-            this.switchContentTab(0);
-          })
-        }
-        Text($r('app.string.android_reply_count', Math.max(0, this.threadReplyNum - 1)))
-          .fontSize(13.5)
-          .fontWeight(FontWeight.Medium)
-          .fontColor($r('app.color.text_primary'))
-      }
-      .alignItems(VerticalAlign.Center)
+      Text($r('app.string.android_reply_count', Math.max(0, this.threadReplyNum - 1)))
+        .fontSize(13.5)
+        .fontWeight(FontWeight.Medium)
+        .fontColor($r('app.color.text_primary'))
       Blank()
       Row({ space: 8 }) {
         Row({ space: 2 }) {
@@ -2902,7 +2852,7 @@ export struct ThreadPage {
         .alignItems(VerticalAlign.Center)
         .onClick(() => {
           VibratorUtil.light();
-          this.showSortMenu();
+          this.showSortMenu(true);
         })
       }
       .alignItems(VerticalAlign.Center)
