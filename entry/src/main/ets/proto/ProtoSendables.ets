@@ -363,6 +363,7 @@ export function decodePostContentInline(reader: ProtoReader): SendableContentRes
   let textValue: string = '';
   let linkValue: string = '';
   let emojiDesc: string = '';
+  let voiceDuration: number = 0;
   let uidValue: number = 0;
   let bigSrc: string = '';
   let cdnSrc: string = '';
@@ -407,6 +408,8 @@ export function decodePostContentInline(reader: ProtoReader): SendableContentRes
       imageType = reader.readString();
     } else if (tag.fieldNumber === 11) {
       emojiDesc = reader.readString();
+    } else if (tag.fieldNumber === 13) {
+      voiceDuration = reader.readVarint();
     } else if (tag.fieldNumber === 15) {
       uidValue = reader.readVarint();
     } else if (tag.fieldNumber === 16) {
@@ -573,7 +576,8 @@ export function decodePostContentInline(reader: ProtoReader): SendableContentRes
   } else if (fragmentType === 10) {
     const frag: SendableContentFragment = new SendableContentFragment();
     frag.type = CONTENT_FRAGMENT_TEXT;
-    frag.text = '[语音]';
+    const secs: number = voiceDuration >= 1000 ? Math.round(voiceDuration / 1000) : voiceDuration;
+    frag.text = secs > 0 ? `[语音 ${secs}″]` : '[语音]';
     fragments.push(frag);
   } else if (fragmentType === 35 || fragmentType === 36 || fragmentType === 37) {
     const tpLabel: string = tiebaplusTitle.length > 0 ? tiebaplusTitle :

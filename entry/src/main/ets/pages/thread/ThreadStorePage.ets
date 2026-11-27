@@ -252,7 +252,7 @@ export struct ThreadStorePage {
                       Logger.error(TAG, `[ThreadStorePage] handleDisagree failed: ${err.message}`);
                     });
                   },
-                  onCommentClick: () => this.showCommentToast()
+                  onCommentClick: () => RouterUtil.push(RouterUtil.ROUTE_THREAD_PAGE, new ThreadNavParams(thread.tid, false, true))
                 })
               }
               // 左滑显示"取消收藏"按钮（#115 列表滑动：收藏列表场景）

@@ -24,10 +24,12 @@ const TAG: string = 'RouterUtil';
 export class ThreadNavParams {
   tid: number;
   seeLz: boolean;
+  jumpToReplies: boolean;
 
-  constructor(tid: number, seeLz: boolean = false) {
+  constructor(tid: number, seeLz: boolean = false, jumpToReplies: boolean = false) {
     this.tid = tid;
     this.seeLz = seeLz;
+    this.jumpToReplies = jumpToReplies;
   }
 }
 
@@ -115,11 +117,13 @@ export class ImageViewerNavParams {
   urls: string[];
   index: number;
   shareId: string;
+  fallbackUrls: string[];
 
-  constructor(urls: string[], index: number = 0, shareId: string = '') {
+  constructor(urls: string[], index: number = 0, shareId: string = '', fallbackUrls: string[] = []) {
     this.urls = urls;
     this.index = index;
     this.shareId = shareId;
+    this.fallbackUrls = fallbackUrls;
   }
 }
 

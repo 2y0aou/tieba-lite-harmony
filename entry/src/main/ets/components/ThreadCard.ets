@@ -1,7 +1,8 @@
 import { common } from '@kit.AbilityKit';
 import { systemShare } from '@kit.ShareKit';
 import { ThreadInfo, MediaInfo, SubPostInfo, ContentFragment, ContentFragmentType } from '../model/ForumModels';
-import { EmoticonManager } from '../utils/EmoticonManager';
+import { EmoticonInfo, EmoticonManager } from '../utils/EmoticonManager';
+import { resolveHighResImageUrl } from '../utils/MediaAnimation';
 import { formatRelativeTime } from '../utils/TimeUtil';
 import { getMediaImageUrl, getAvatarImageUrl } from '../utils/ImageLoadUtil';
 import { connectTheme, ThemeState } from '../theme/ThemeManager';
@@ -17,6 +18,47 @@ import { connectTiebaUsername, TiebaUsernameState } from '../model/AppStorageV2M
 import { requestCommentPreview } from '../utils/ThreadCommentCache';
 
 const SUB_POST_ANONYMOUS_NAME: string = '匿名';
+
+/** 信息流正文内联表情切片（解析 #(滑稽) 等贴吧表情标记） */
+class FeedTextSegment {
+  isEmoji: boolean;
+  value: string;
+
+  constructor(isEmoji: boolean, value: string) {
+    this.isEmoji = isEmoji;
+    this.value = value;
+  }
+}
+
+function parseFeedEmoticonSegments(text: string): FeedTextSegment[] {
+  const segments: FeedTextSegment[] = [];
+  let cursor: number = 0;
+  const len: number = text.length;
+  while (cursor < len) {
+    const start: number = text.indexOf('#(', cursor);
+    if (start < 0) {
+      segments.push(new FeedTextSegment(false, text.slice(cursor)));
+      break;
+    }
+    const end: number = text.indexOf(')', start + 2);
+    if (end < 0) {
+      segments.push(new FeedTextSegment(false, text.slice(cursor)));
+      break;
+    }
+    if (start > cursor) {
+      segments.push(new FeedTextSegment(false, text.slice(cursor, start)));
+    }
+    const emoName: string = text.slice(start + 2, end);
+    const emoInfo: EmoticonInfo | undefined = EmoticonManager.getEmoticonByName(emoName);
+    if (emoInfo !== undefined && EmoticonManager.hasRenderableEmoticon(emoInfo.id)) {
+      segments.push(new FeedTextSegment(true, emoInfo.id));
+    } else {
+      segments.push(new FeedTextSegment(false, text.slice(start, end + 1)));
+    }
+    cursor = end + 1;
+  }
+  return segments;
+}
 
 @Preview
 @ReusableV2
@@ -34,6 +76,8 @@ export struct ThreadCard {
   @Event onCommentClick?: (thread: ThreadInfo) => void;
   @Event onForumClick?: (thread: ThreadInfo) => void;
   @Event onSubPostClick?: (subPost: SubPostInfo) => void;
+  /** 屏蔽当前贴吧回调（推荐流菜单） */
+  @Event onBlockForumClick?: (forumName: string) => void;
 
   /** 卡片按下态（对齐 iOS 原型 :active 缩放 0.98 + 透明度 0.85） */
   @Local isPressed: boolean = false;
@@ -167,7 +211,7 @@ export struct ThreadCard {
 
   // 两张或三张缩略图等宽，超过 3 张时在第 3 张右下角叠加 +N 胶囊角标
   @Builder
-  GridMedia(index: number, isLast: boolean) {
+  GridMedia(index: number) {
     Stack({ alignContent: Alignment.BottomEnd }) {
       Image(getMediaImageUrl(
         this.thread.mediaList[index].thumbnail,
@@ -213,7 +257,7 @@ export struct ThreadCard {
     }
     .layoutWeight(1)
     .aspectRatio(this.thread.mediaList.length === 2 ? 1.45 : 1)
-    .margin({ right: isLast ? 0 : 5 })
+    .margin({ right: index < Math.min(this.thread.mediaList.length, 3) - 1 ? 5 : 0 })
   }
 
   /** 计算视频封面宽高比（videoWidth/videoHeight 有效时用实际比例，否则默认 16:9） */
@@ -226,15 +270,17 @@ export struct ThreadCard {
 
   /**
    * #132 打开图片查看器（共享元素转场）
-   * 用 RouterUtil.pushWithTransition 跳转，animateTo + pushPathByName(false) 禁用系统转场
-   * 由 geometryTransition 接管共享元素转场动画
+   * 优先将瀑布流缩略图/裁切图升级为贴吧无损原图直链，并携带原始 URL 作为加载失败自动回退
    */
   private openImageViewer(index: number): void {
-    const urls: string[] = this.thread.mediaList.map((m: MediaInfo) => m.animatedUrl.length > 0 ? m.animatedUrl : m.url);
+    const fallbackUrls: string[] = this.thread.mediaList.map((m: MediaInfo) =>
+      m.animatedUrl.length > 0 ? m.animatedUrl : m.url);
+    const highResUrls: string[] = this.thread.mediaList.map((m: MediaInfo) =>
+      m.animatedUrl.length > 0 ? m.animatedUrl : resolveHighResImageUrl(m.url));
     const shareId: string = `card_${this.thread.tid}_${index}`;
     RouterUtil.pushWithTransition(
       RouterUtil.ROUTE_IMAGE_VIEWER_PAGE,
-      new ImageViewerNavParams(urls, index, shareId),
+      new ImageViewerNavParams(highResUrls, index, shareId, fallbackUrls),
       this.getUIContext()
     );
   }
@@ -424,6 +470,25 @@ export struct ThreadCard {
     }
   }
 
+  private buildMoreMenuItems(): MenuElement[] {
+    const items: MenuElement[] = [];
+    if (this.onDisagreeClick) {
+      items.push({
+        value: getResourceString(this.thread.isDisagreed ?
+          $r('app.string.android_undo_dislike') : $r('app.string.android_dislike')),
+        action: () => this.onDisagreeClick?.(this.thread)
+      });
+    }
+    if (this.onBlockForumClick && this.thread.forumName.length > 0) {
+      const targetForum: string = this.thread.forumName;
+      items.push({
+        value: `屏蔽「${targetForum}吧」`,
+        action: () => this.onBlockForumClick?.(targetForum)
+      });
+    }
+    return items;
+  }
+
   @Builder
   FeedAuthor() {
     Row() {
@@ -467,7 +532,7 @@ export struct ThreadCard {
       .hitTestBehavior(HitTestMode.Transparent)
       .onClick(() => this.onAuthorClick?.())
 
-      if (this.onDisagreeClick) {
+      if (this.onDisagreeClick || (this.onBlockForumClick && this.thread.forumName.length > 0)) {
         Row() {
           Image($r('app.media.android_chevron_down'))
             .width(18)
@@ -478,13 +543,7 @@ export struct ThreadCard {
         .height(36)
         .justifyContent(FlexAlign.End)
         .accessibilityText($r('app.string.menu_more'))
-        .bindMenu([
-          {
-            value: getResourceString(this.thread.isDisagreed ?
-              $r('app.string.android_undo_dislike') : $r('app.string.android_dislike')),
-            action: () => this.onDisagreeClick?.(this.thread)
-          }
-        ])
+        .bindMenu(this.buildMoreMenuItems())
       }
     }
     .width('100%')
@@ -518,7 +577,19 @@ export struct ThreadCard {
       }
 
       if (this.thread.content.length > 0) {
-        Text(this.thread.content)
+        if (this.thread.content.indexOf('#(') >= 0) {
+          Text() {
+            ForEach(parseFeedEmoticonSegments(this.thread.content), (seg: FeedTextSegment, segIdx: number) => {
+              if (seg.isEmoji) {
+                ImageSpan(EmoticonManager.getEmoticonResource(seg.value))
+                  .width(17)
+                  .height(17)
+                  .verticalAlign(ImageSpanAlignment.CENTER)
+              } else {
+                Span(seg.value)
+              }
+            }, (seg: FeedTextSegment, segIdx: number) => `${this.thread.tid}_seg_${segIdx}_${seg.value}`)
+          }
           .width('100%')
           .fontSize(14)
           .fontColor(this.thread.title.length > 0 ? $r('app.color.text_secondary') : $r('app.color.text_primary'))
@@ -526,6 +597,16 @@ export struct ThreadCard {
           .textOverflow({ overflow: TextOverflow.Ellipsis })
           .lineHeight(20)
           .margin({ bottom: 8 })
+        } else {
+          Text(this.thread.content)
+            .width('100%')
+            .fontSize(14)
+            .fontColor(this.thread.title.length > 0 ? $r('app.color.text_secondary') : $r('app.color.text_primary'))
+            .maxLines(this.thread.title.length > 0 ? 3 : 5)
+            .textOverflow({ overflow: TextOverflow.Ellipsis })
+            .lineHeight(20)
+            .margin({ bottom: 8 })
+        }
       }
 
       // 媒体区域：视频帖优先渲染 VideoMedia（封面+播放图标，点击跳帖子详情）
@@ -537,12 +618,12 @@ export struct ThreadCard {
           this.SingleMedia()
         } else {
           Row() {
-            this.GridMedia(0, false)
+            this.GridMedia(0)
             if (this.thread.mediaList.length > 1) {
-              this.GridMedia(1, this.thread.mediaList.length === 2)
+              this.GridMedia(1)
             }
             if (this.thread.mediaList.length > 2) {
-              this.GridMedia(2, true)
+              this.GridMedia(2)
             }
           }
           .width('100%')

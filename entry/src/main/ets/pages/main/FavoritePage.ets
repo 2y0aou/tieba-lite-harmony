@@ -27,6 +27,7 @@ import { BaseViewModel, FetchDataResult } from '../../viewmodel/BaseViewModel';
 import { CommonDataSource } from '../../utils/CommonDataSource';
 import { connectTheme, ThemeState } from '../../theme/ThemeManager';
 import { RouterUtil, ThreadNavParams, UserProfileNavParams, TopicDetailNavParams } from '../../utils/RouterUtil';
+import { BlockManager } from '../../utils/BlockManager';
 import { VibratorUtil } from '../../utils/VibratorUtil';
 import { Logger } from '../../utils/Logger';
 
@@ -174,6 +175,7 @@ struct ConcernTab {
   async aboutToAppear() {
     // #203 注入 DataSource 引用，供 BaseViewModel 内存压力时自动 clearCache
     this.viewModel.setDataSource(this.dataSource);
+    await BlockManager.load();
     // H05：登录态由 StartupTask_Bduss 统一判定写入 LoginState，页面不再回填凭证；
     // 启动任务晚于 aboutToAppear 时由 @Monitor('loginState.value') 自动触发首屏加载
     if (this.loginState.value && !this.isLoaded) {
@@ -232,13 +234,31 @@ struct ConcernTab {
     });
   }
 
+  private filterBlockedThreads(list: ThreadInfo[]): ThreadInfo[] {
+    return list.filter((t: ThreadInfo) => !BlockManager.isForumBlocked(t.forumName));
+  }
+
+  private async handleBlockForum(forumName: string): Promise<void> {
+    if (forumName.length === 0) {
+      return;
+    }
+    await BlockManager.blockForum(forumName);
+    const remaining: ThreadInfo[] = this.filterBlockedThreads(this.viewModel.paginationData.dataList);
+    this.dataSource.setData(remaining);
+    this.threadCount = this.dataSource.totalCount();
+    this.showToast(`已屏蔽「${forumName}吧」，可在设置中取消`);
+  }
+
   private syncState(): void {
     const paginationData = this.viewModel.paginationData;
     const loadingState = this.viewModel.loadingState;
     if (this.viewModel.lastOpWasRefresh) {
-      this.dataSource.setData(paginationData.dataList);
+      this.dataSource.setData(this.filterBlockedThreads(paginationData.dataList));
     } else {
-      this.dataSource.appendData(this.viewModel.lastAddedList);
+      const added: ThreadInfo[] = this.filterBlockedThreads(this.viewModel.lastAddedList);
+      if (added.length > 0) {
+        this.dataSource.appendData(added);
+      }
     }
     this.threadCount = this.dataSource.totalCount();
     this.hasMore = paginationData.hasMore;
@@ -357,7 +377,12 @@ struct ConcernTab {
                   Logger.error(TAG, `[ConcernTab] handleDisagree failed: ${err.message}`);
                 });
               },
-              onCommentClick: () => this.showCommentToast()
+              onBlockForumClick: (fname: string) => {
+                this.handleBlockForum(fname).catch((err: Error) => {
+                  Logger.error(TAG, `[ConcernTab] handleBlockForum failed: ${err.message}`);
+                });
+              },
+              onCommentClick: () => RouterUtil.push(RouterUtil.ROUTE_THREAD_PAGE, new ThreadNavParams(thread.tid, false, true))
             })
           }
         }, (thread: ThreadInfo, index: number) => `${thread.tid}`)
@@ -425,6 +450,7 @@ struct PersonalizedTab {
   async aboutToAppear() {
     // #203 注入 DataSource 引用，供 BaseViewModel 内存压力时自动 clearCache
     this.viewModel.setDataSource(this.dataSource);
+    await BlockManager.load();
     if (!this.isLoaded) {
       this.isLoaded = true;
       this.loadThreads(true).catch((err: Error) => {
@@ -470,13 +496,31 @@ struct PersonalizedTab {
     });
   }
 
+  private filterBlockedThreads(list: ThreadInfo[]): ThreadInfo[] {
+    return list.filter((t: ThreadInfo) => !BlockManager.isForumBlocked(t.forumName));
+  }
+
+  private async handleBlockForum(forumName: string): Promise<void> {
+    if (forumName.length === 0) {
+      return;
+    }
+    await BlockManager.blockForum(forumName);
+    const remaining: ThreadInfo[] = this.filterBlockedThreads(this.viewModel.paginationData.dataList);
+    this.dataSource.setData(remaining);
+    this.threadCount = this.dataSource.totalCount();
+    this.showToast(`已屏蔽「${forumName}吧」，可在设置中取消`);
+  }
+
   private syncState(): void {
     const paginationData = this.viewModel.paginationData;
     const loadingState = this.viewModel.loadingState;
     if (this.viewModel.lastOpWasRefresh) {
-      this.dataSource.setData(paginationData.dataList);
+      this.dataSource.setData(this.filterBlockedThreads(paginationData.dataList));
     } else {
-      this.dataSource.appendData(this.viewModel.lastAddedList);
+      const added: ThreadInfo[] = this.filterBlockedThreads(this.viewModel.lastAddedList);
+      if (added.length > 0) {
+        this.dataSource.appendData(added);
+      }
     }
     this.threadCount = this.dataSource.totalCount();
     this.hasMore = paginationData.hasMore;
@@ -573,7 +617,12 @@ struct PersonalizedTab {
                   Logger.error(TAG, `[PersonalizedTab] handleDisagree failed: ${err.message}`);
                 });
               },
-              onCommentClick: () => this.showCommentToast()
+              onBlockForumClick: (fname: string) => {
+                this.handleBlockForum(fname).catch((err: Error) => {
+                  Logger.error(TAG, `[PersonalizedTab] handleBlockForum failed: ${err.message}`);
+                });
+              },
+              onCommentClick: () => RouterUtil.push(RouterUtil.ROUTE_THREAD_PAGE, new ThreadNavParams(thread.tid, false, true))
             })
           }
         }, (thread: ThreadInfo, index: number) => `${thread.tid}`)
@@ -850,7 +899,7 @@ struct HotTab {
                     Logger.error(TAG, `[HotTab] handleDisagree failed: ${err.message}`);
                   });
                 },
-                onCommentClick: () => this.showCommentToast()
+                onCommentClick: () => RouterUtil.push(RouterUtil.ROUTE_THREAD_PAGE, new ThreadNavParams(thread.tid, false, true))
               })
               // 排名 + 热度信息（位于卡片下方右侧，对齐原 app FeedCard dislikeAction 槽位）
               Row() {

@@ -16,6 +16,7 @@ import { fileUri } from '@kit.CoreFileKit';
 import { common } from '@kit.AbilityKit';
 import { BusinessError } from '@kit.BasicServicesKit';
 import { getResourceString } from '../../utils/ResourceUtil';
+import { getStatusBarHeight } from '../../utils/StatusBarUtil';
 import { detectAnimatedImageExt } from '../../utils/MediaAnimation';
 import { VibratorUtil } from '../../utils/VibratorUtil';
 import { RouterUtil, ImageViewerNavParams } from '../../utils/RouterUtil';
@@ -36,7 +37,9 @@ export function ImageViewerPageBuilder() {
 @ComponentV2
 export struct ImageViewerPage {
   @Local imageUrls: string[] = [];
+  @Local fallbackUrls: string[] = [];
   @Local currentIndex: number = 0;
+  @Local statusBarHeight: number = 36;
   // 共享元素转场 ID（源端 Image 与目标端 Image 绑定同 id）
   @Local shareId: string = '';
   // bindSheet 保存弹窗状态
@@ -62,12 +65,31 @@ export struct ImageViewerPage {
     if (paramsStack && paramsStack.length > 0) {
       const params = paramsStack[paramsStack.length - 1] as ImageViewerNavParams;
       if (params && params.urls && params.urls.length > 0) {
-        this.imageUrls = params.urls;
+        this.imageUrls = params.urls.slice();
+        this.fallbackUrls = params.fallbackUrls ? params.fallbackUrls.slice() : [];
         const rawIdx: number = params.index;
         const maxIdx: number = this.imageUrls.length - 1;
         this.currentIndex = Math.max(0, Math.min(rawIdx, maxIdx));
         this.shareId = params.shareId;
       }
+    }
+    try {
+      this.statusBarHeight = await getStatusBarHeight(this.getUIContext());
+    } catch (err) {
+      Logger.warn(TAG, `[ImageViewer] getStatusBarHeight failed: ${(err as Error).message}`);
+    }
+  }
+
+  /** 高清原图加载失败时自动回退到原始 big_pic，避免防盗链导致白图 */
+  private fallbackImageAt(index: number): void {
+    if (index < 0 || index >= this.imageUrls.length || index >= this.fallbackUrls.length) {
+      return;
+    }
+    const fallback: string = this.fallbackUrls[index];
+    if (fallback.length > 0 && this.imageUrls[index] !== fallback) {
+      const next: string[] = this.imageUrls.slice();
+      next[index] = fallback;
+      this.imageUrls = next;
     }
   }
 
@@ -276,7 +298,8 @@ export struct ImageViewerPage {
                 .interpolation(ImageInterpolation.High)
                 .alt($r('app.media.startIcon'))
                 .onError(() => {
-                  // 大图加载失败静默处理
+                  // 高清原图加载失败时自动回退到原始大图 URL
+                  this.fallbackImageAt(index);
                 })
                 // 共享元素转场：只有当前页绑定 geometryTransition
                 .geometryTransition(index === this.currentIndex ? this.shareId : '')
@@ -295,23 +318,59 @@ export struct ImageViewerPage {
         .width('100%')
         .height('100%')
 
-        // 顶部关闭按钮
+        // 顶部安全区操作栏：避让状态栏 + 页码胶囊 + 一键保存入口
         Row() {
-          Image($r('app.media.ic_back'))
-            .width(28)
-            .height(28)
-            .fillColor(Color.White)
-            .syncLoad(true)
-            .interpolation(ImageInterpolation.Low)
+          Row() {
+            Image($r('app.media.ic_back'))
+              .width(22)
+              .height(22)
+              .fillColor(Color.White)
+              .syncLoad(true)
+              .interpolation(ImageInterpolation.Low)
+          }
+          .width(38)
+          .height(38)
+          .borderRadius(19)
+          .backgroundColor('rgba(0, 0, 0, 0.42)')
+          .justifyContent(FlexAlign.Center)
+          .alignItems(VerticalAlign.Center)
+          .onClick(() => {
+            this.closeViewer();
+          })
+
+          Blank()
+
+          if (this.imageUrls.length > 1) {
+            Text(`${this.currentIndex + 1} / ${this.imageUrls.length}`)
+              .fontSize(13)
+              .fontWeight(FontWeight.Medium)
+              .fontColor(Color.White)
+              .padding({ left: 12, right: 12, top: 5, bottom: 5 })
+              .borderRadius(999)
+              .backgroundColor('rgba(0, 0, 0, 0.42)')
+          }
+
+          Blank()
+
+          Text('保存')
+            .fontSize(13)
+            .fontWeight(FontWeight.Medium)
+            .fontColor(Color.White)
+            .padding({ left: 12, right: 12, top: 7, bottom: 7 })
+            .borderRadius(999)
+            .backgroundColor('rgba(0, 0, 0, 0.42)')
             .onClick(() => {
-              this.closeViewer();
+              const activeUrl: string = this.imageUrls[this.currentIndex] ?? '';
+              if (activeUrl.length > 0) {
+                VibratorUtil.light();
+                this.handleLongPress(activeUrl);
+              }
             })
         }
         .width('100%')
-        .height(56)
-        .padding({ left: 16, right: 16 })
+        .padding({ left: 16, right: 16, top: this.statusBarHeight + 8, bottom: 10 })
         .alignItems(VerticalAlign.Center)
-        .justifyContent(FlexAlign.Start)
+        .position({ x: 0, y: 0 })
 
         }
       .width('100%')

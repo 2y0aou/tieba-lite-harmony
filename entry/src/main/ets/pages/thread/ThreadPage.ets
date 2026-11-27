@@ -363,6 +363,8 @@ struct PostItem {
   @Event onAuthorClick?: () => void;
   // #71 点击 @用户 回调，跳转被@用户的主页（uid + 昵称）
   @Event onAtClick?: (uid: number, name: string) => void;
+  // 点击正文链接回调（识别贴吧内链直接应用内跳帖，外部链接呼起系统浏览器）
+  @Event onLinkClick?: (url: string) => void;
   // P1 性能优化：themeState 从父组件传入，避免每个 PostItem 实例都 connectTheme()
   // 父组件 ThreadPage 只 connect 一次，传给所有 PostItem 复用
   @Require @Param themeState: ThemeState;
@@ -563,11 +565,15 @@ struct PostItem {
         Text() {
           ForEach(this.post.fragments, (frag: ContentFragment, idx: number) => {
             if (frag.type === ContentFragmentType.LINK) {
-              // 链接：主色高亮 + 点击显示链接URL（跳转功能后续实现）
+              // 链接：主色高亮 + 点击识别贴吧内链跳帖或拉起系统浏览器
               Span(frag.text)
                 .fontColor(this.themeState.primary)
                 .onClick(() => {
-                  this.showToast(frag.link);
+                  if (this.onLinkClick) {
+                    this.onLinkClick(frag.link);
+                  } else {
+                    this.showToast(frag.link);
+                  }
                 })
             } else if (frag.type === ContentFragmentType.AT) {
               // @用户：主色高亮 + 点击跳转被@用户主页
@@ -787,6 +793,11 @@ export struct ThreadPage {
   // 避免页面销毁后修改 @Local 触发警告或操作已销毁的 dataSource
   private isDestroyed: boolean = false;
   private hasRecordedHistory: boolean = false;
+  // 小黑盒式正文/回复区左右滑快速切换状态
+  private pendingJumpToReplies: boolean = false;
+  private isInRepliesArea: boolean = false;
+  private savedArticleOffsetY: number = 0;
+  private swipeStartX: number = 0;
 
   @Local tid: number = 0;
   private floorRepliesByPid: Map<number, FloorRepliesState> = new Map();
@@ -876,6 +887,9 @@ export struct ThreadPage {
           if (params.seeLz === true) {
             this.onlyAuthorMode = true;
             this.viewModel.setOnlyAuthor(true);
+          }
+          if (params.jumpToReplies === true) {
+            this.pendingJumpToReplies = true;
           }
         } else {
           Logger.error(TAG, `[ThreadPage] invalid tid from params: ${params.tid}`);
@@ -1011,6 +1025,94 @@ export struct ThreadPage {
         Logger.warn(TAG, `[ThreadPage] record browse history failed: ${err.message}`);
       });
     }
+
+    // 从瀑布流点评论图标进帖时，首屏渲染后自动平滑定位到回复区顶部
+    if (this.pendingJumpToReplies && this.hasFirstPostHeader() && !this.isLoading) {
+      this.pendingJumpToReplies = false;
+      this.scrollTimer = setTimeout(() => {
+        this.scrollTimer = -1;
+        if (!this.isDestroyed) {
+          this.jumpToRepliesArea(false);
+        }
+      }, SCROLL_TO_FIRST_REPLY_DELAY_MS);
+    }
+  }
+
+  /** 小黑盒式快速切到回复区：记住正文阅读位置并平滑滚到回复区头部 */
+  private jumpToRepliesArea(withHaptic: boolean = true): void {
+    if (!this.hasFirstPostHeader()) {
+      return;
+    }
+    try {
+      const currentY: number = this.scroller.currentOffset()?.yOffset ?? 0;
+      if (!this.isInRepliesArea) {
+        this.savedArticleOffsetY = Math.max(0, currentY);
+      }
+      this.scroller.scrollToIndex(1, true, ScrollAlign.START);
+      this.isInRepliesArea = true;
+      if (withHaptic) {
+        VibratorUtil.light();
+      }
+    } catch (err) {
+      Logger.warn(TAG, `[ThreadPage] jumpToRepliesArea failed: ${(err as Error).message}`);
+    }
+  }
+
+  /** 小黑盒式右滑返回正文：平滑滚回离开正文前的精确位置 */
+  private jumpBackToArticle(): void {
+    try {
+      this.scroller.scrollTo({
+        xOffset: 0,
+        yOffset: Math.max(0, this.savedArticleOffsetY),
+        animation: { duration: 280, curve: Curve.FastOutSlowIn }
+      });
+      this.isInRepliesArea = false;
+      VibratorUtil.light();
+    } catch (err) {
+      Logger.warn(TAG, `[ThreadPage] jumpBackToArticle failed: ${(err as Error).message}`);
+    }
+  }
+
+  /** 底部悬浮栏评论图标智能来回切换：正文 ↔ 回复区 */
+  private toggleRepliesAndArticle(): void {
+    if (!this.isInRepliesArea && this.hasFirstPostHeader()) {
+      this.jumpToRepliesArea();
+    } else {
+      this.jumpBackToArticle();
+    }
+  }
+
+  /** 贴内链接点击：贴吧内链应用内直达帖子，其余外链呼起系统浏览器 */
+  private openLinkUrl(rawUrl: string): void {
+    const cleanUrl: string = rawUrl.trim();
+    if (cleanUrl.length === 0) {
+      return;
+    }
+    const tiebaMatch: RegExpMatchArray | null = cleanUrl.match(/tieba\.baidu\.com\/p\/(\d+)/i);
+    if (tiebaMatch && tiebaMatch.length >= 2) {
+      const targetTid: number = Number(tiebaMatch[1]);
+      if (!Number.isNaN(targetTid) && targetTid > 0) {
+        RouterUtil.push(RouterUtil.ROUTE_THREAD_PAGE, new ThreadNavParams(targetTid));
+        return;
+      }
+    }
+    const targetUrl: string = /^https?:\/\//i.test(cleanUrl) ? cleanUrl : `https://${cleanUrl}`;
+    try {
+      const hostContext = this.getUIContext().getHostContext() as common.UIAbilityContext | undefined;
+      if (hostContext) {
+        hostContext.startAbility({
+          action: 'ohos.want.action.viewData',
+          uri: targetUrl
+        }).catch((err: Error) => {
+          Logger.warn(TAG, `[ThreadPage] openLinkUrl failed: ${err.message}`);
+          this.showToast(cleanUrl);
+        });
+        return;
+      }
+    } catch (err) {
+      Logger.warn(TAG, `[ThreadPage] openLinkUrl error: ${(err as Error).message}`);
+    }
+    this.showToast(cleanUrl);
   }
 
   onReachEnd(): void {
@@ -1822,7 +1924,7 @@ export struct ThreadPage {
         .alignItems(HorizontalAlign.Center)
         .hitTestBehavior(HitTestMode.Block)
         .onClick(() => {
-          this.scroller.scrollEdge(Edge.Bottom);
+          this.toggleRepliesAndArticle();
         })
 
         Column() {
@@ -1998,7 +2100,7 @@ export struct ThreadPage {
               Span(frag.text)
                 .fontColor(this.themeState.primary)
                 .onClick(() => {
-                  this.showToast(frag.link);
+                  this.openLinkUrl(frag.link);
                 })
             } else if (frag.type === ContentFragmentType.AT) {
               Span(frag.text)
@@ -2141,7 +2243,7 @@ export struct ThreadPage {
               Span(frag.text)
                 .fontColor(this.themeState.primary)
                 .onClick(() => {
-                  this.showToast(frag.link);
+                  this.openLinkUrl(frag.link);
                 })
             } else if (frag.type === ContentFragmentType.AT) {
               Span(frag.text)
@@ -2386,7 +2488,8 @@ export struct ThreadPage {
                 post.author.name,
                 post.author.uid
               ),
-              onAtClick: (uid: number, name: string) => this.navigateToUserProfile('', name, uid)
+              onAtClick: (uid: number, name: string) => this.navigateToUserProfile('', name, uid),
+              onLinkClick: (url: string) => this.openLinkUrl(url)
             })
           }
         }, (post: PostInfo) => `${post.pid}`)
@@ -2414,11 +2517,34 @@ export struct ThreadPage {
     // #194 clip(false) + cachedCount(_, true) 让内容穿透到 titleBar 下方做模糊（对齐 HomePage 混合式）
     .clip(false)
     .backgroundColor($r('app.color.android_post_background'))
-    .onScrollIndex((_start: number, end: number) => {
+    .onScrollIndex((start: number, end: number) => {
+      this.isInRepliesArea = this.hasFirstPostHeader() ? start >= 1 : true;
       if (this.postCount > 0 && end >= this.postCount - 4 && this.hasMore && !this.isLoading) {
         this.onReachEnd();
       }
     })
+    .parallelGesture(
+      // 小黑盒式左右滑快速切换：正文左滑直达回复区，回复区非左边缘右滑返回正文原位置（不拦截垂直滚动与系统边缘返回）
+      PanGesture({ direction: PanDirection.Horizontal, distance: 24 })
+        .onActionStart((event: GestureEvent) => {
+          this.swipeStartX = event.fingerList && event.fingerList.length > 0 ? event.fingerList[0].globalX : 100;
+        })
+        .onActionEnd((event: GestureEvent) => {
+          if (this.showCommentsDrawer || this.showReplySheet || !this.hasFirstPostHeader()) {
+            return;
+          }
+          const dx: number = event.offsetX;
+          const dy: number = event.offsetY;
+          if (Math.abs(dx) < 56 || Math.abs(dx) < Math.abs(dy) * 1.6) {
+            return;
+          }
+          if (dx < 0 && !this.isInRepliesArea) {
+            this.jumpToRepliesArea();
+          } else if (dx > 0 && this.isInRepliesArea && this.swipeStartX > 36) {
+            this.jumpBackToArticle();
+          }
+        })
+    )
     .onReachEnd(() => this.onReachEnd())
     .bindSheet($$this.showCommentsDrawer, this.CommentsDrawer(), {
       detents: ['76%', SheetSize.LARGE],
@@ -2525,7 +2651,7 @@ export struct ThreadPage {
                     Span(frag.text)
                       .fontColor(this.themeState.primary)
                       .onClick(() => {
-                        this.showToast(frag.link);
+                        this.openLinkUrl(frag.link);
                       })
                   } else if (frag.type === ContentFragmentType.AT) {
                     Span(frag.text)

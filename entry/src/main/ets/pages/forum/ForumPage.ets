@@ -458,7 +458,7 @@ export struct ForumPage {
                         Logger.error(TAG, `[ForumPage] handleDisagree failed: ${err.message}`);
                       });
                     },
-                    onCommentClick: () => this.showCommentToast()
+                    onCommentClick: () => RouterUtil.push(RouterUtil.ROUTE_THREAD_PAGE, new ThreadNavParams(thread.tid, false, true))
                   })
                 }
               }, (thread: ThreadInfo, index: number) => `${thread.tid}`)

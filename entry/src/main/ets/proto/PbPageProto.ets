@@ -175,6 +175,7 @@ export function decodePostContent(reader: ProtoReader): PostContentDecodeResult 
   let textValue: string = '';     // field 2
   let linkValue: string = '';     // field 3（LINK URL）
   let emojiDesc: string = '';     // field 11（EMOJI 描述）
+  let voiceDuration: number = 0;  // field 13（语音时长，毫秒）
   let uidValue: number = 0;       // field 15（AT 用户ID）
   // 图片碎片字段（type=3/20 或带 memeInfo 时有效，对齐 PbContent.proto）
   let bigSrc: string = '';        // field 6 — 大图备用链接
@@ -223,6 +224,8 @@ export function decodePostContent(reader: ProtoReader): PostContentDecodeResult 
       imageType = reader.readString();
     } else if (tag.fieldNumber === 11) {
       emojiDesc = reader.readString();
+    } else if (tag.fieldNumber === 13) {
+      voiceDuration = reader.readVarint();
     } else if (tag.fieldNumber === 15) {
       uidValue = reader.readVarint();
     } else if (tag.fieldNumber === 16) {
@@ -399,7 +402,8 @@ export function decodePostContent(reader: ProtoReader): PostContentDecodeResult 
   } else if (fragmentType === 10) {
     const frag: ContentFragment = new ContentFragment();
     frag.type = ContentFragmentType.TEXT;
-    frag.text = '[语音]';
+    const secs: number = voiceDuration >= 1000 ? Math.round(voiceDuration / 1000) : voiceDuration;
+    frag.text = secs > 0 ? `[语音 ${secs}″]` : '[语音]';
     result.fragments.push(frag);
   } else if (fragmentType === 35 || fragmentType === 36 || fragmentType === 37) {
     // 贴吧+ 卡片/推广/话题链接

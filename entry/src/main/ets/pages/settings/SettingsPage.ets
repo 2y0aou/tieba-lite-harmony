@@ -33,6 +33,7 @@ import { connectTheme, ThemeState, getThemeConfig, THEME_DYNAMIC } from '../../t
 import { RouterUtil } from '../../utils/RouterUtil';
 import { getStatusBarHeight } from '../../utils/StatusBarUtil';
 import { UpdateNoticeManager } from '../../utils/UpdateNoticeManager';
+import { BlockManager } from '../../utils/BlockManager';
 import { Logger } from '../../utils/Logger';
 
 const TAG: string = 'SettingsPage';
@@ -241,6 +242,9 @@ export struct SettingsPage {
   @Local receivePrereleaseUpdates: boolean = false;
   @Local forumCommentPreview: boolean = false; // Toggle 状态（同步 forumCommentPreviewState）
   @Local recentForumsState: RecentForumsState = connectRecentForums();
+  // 已屏蔽贴吧列表及管理半模态显隐状态
+  @Local blockedForums: string[] = [];
+  @Local showBlockedForumsSheet: boolean = false;
   // 退出登录进行中，防止重复点击
   @Local isLoggingOut: boolean = false;
   @Local isSigningAllForums: boolean = false;
@@ -313,6 +317,7 @@ export struct SettingsPage {
       this.receivePrereleaseUpdates = await storage.getBoolean(BooleanPrefs.RECEIVE_PRERELEASE_UPDATES.key, false);
       this.forumCommentPreview = this.forumCommentPreviewState.value; // 同步状态
       this.recentForumsState.value = await storage.getBoolean(BooleanPrefs.SHOW_RECENT_FORUMS.key, false);
+      this.blockedForums = await BlockManager.load();
     } catch (err) {
       Logger.error(TAG, `[SettingsPage] load colorMode/fontScale/imageLoadType failed: ${(err as Error).message}`);
     }
@@ -2016,6 +2021,146 @@ export struct SettingsPage {
     })
   }
 
+  private async openBlockedForumsSheet(): Promise<void> {
+    this.blockedForums = await BlockManager.load();
+    this.showBlockedForumsSheet = true;
+  }
+
+  private async handleUnblockForum(forumName: string): Promise<void> {
+    await BlockManager.unblockForum(forumName);
+    this.blockedForums = BlockManager.getCachedBlockedForums();
+    this.showToast(`已取消屏蔽「${forumName}吧」`);
+  }
+
+  private async handleClearAllBlockedForums(): Promise<void> {
+    await BlockManager.clearAll();
+    this.blockedForums = [];
+    this.showToast('已清空所有屏蔽贴吧');
+  }
+
+  // 已屏蔽贴吧管理入口：右侧展示已屏蔽数量，点击展开原生半模态列表
+  @Builder blockedForumsMenuItemBuilder() {
+    Row() {
+      Image($r('app.media.ic_warning'))
+        .width(22)
+        .height(22)
+        .fillColor(this.themeState.primary)
+        .syncLoad(true)
+        .interpolation(ImageInterpolation.Low)
+      Text('屏蔽贴吧管理')
+        .layoutWeight(1)
+        .fontSize(16)
+        .fontColor($r('app.color.text_primary'))
+        .margin({ left: 12 })
+      Text(this.blockedForums.length > 0 ? `已屏蔽 ${this.blockedForums.length} 个` : '暂无')
+        .fontSize(13)
+        .fontColor($r('app.color.text_secondary'))
+      Image($r('app.media.ic_chevron_right'))
+        .width(14)
+        .height(14)
+        .fillColor($r('app.color.text_caption'))
+        .margin({ left: 4 })
+        .syncLoad(true)
+        .interpolation(ImageInterpolation.Low)
+    }
+    .width('100%')
+    .height(MENU_ITEM_HEIGHT)
+    .padding({ left: 16, right: 16 })
+    .alignItems(VerticalAlign.Center)
+    .backgroundColor($r('app.color.card_background'))
+    .onClick(() => {
+      VibratorUtil.light();
+      this.openBlockedForumsSheet().catch((err: Error) => {
+        Logger.error(TAG, `[SettingsPage] openBlockedForumsSheet failed: ${err.message}`);
+      });
+    })
+  }
+
+  // 已屏蔽贴吧半模态管理列表
+  @Builder blockedForumsSheetBuilder() {
+    Column() {
+      Row() {
+        Text(`已屏蔽贴吧 (${this.blockedForums.length})`)
+          .fontSize(18)
+          .fontWeight(FontWeight.Bold)
+          .fontColor($r('app.color.text_primary'))
+          .layoutWeight(1)
+        if (this.blockedForums.length > 0) {
+          Text('清空全部')
+            .fontSize(14)
+            .fontColor($r('app.color.error'))
+            .padding({ left: 10, right: 10, top: 6, bottom: 6 })
+            .onClick(() => {
+              VibratorUtil.light();
+              this.handleClearAllBlockedForums().catch((err: Error) => {
+                Logger.error(TAG, `[SettingsPage] clearAllBlockedForums failed: ${err.message}`);
+              });
+            })
+        }
+      }
+      .width('100%')
+      .padding({ left: 20, right: 16, top: 18, bottom: 12 })
+
+      if (this.blockedForums.length === 0) {
+        Column() {
+          Text('暂无已屏蔽的贴吧')
+            .fontSize(15)
+            .fontColor($r('app.color.text_secondary'))
+          Text('在推荐流卡片右上角菜单中可一键屏蔽不想看的贴吧')
+            .fontSize(12)
+            .fontColor($r('app.color.text_caption'))
+            .margin({ top: 6 })
+        }
+        .width('100%')
+        .layoutWeight(1)
+        .justifyContent(FlexAlign.Center)
+        .alignItems(HorizontalAlign.Center)
+        .padding({ left: 24, right: 24, bottom: 32 })
+      } else {
+        List() {
+          ForEach(this.blockedForums, (forumName: string) => {
+            ListItem() {
+              Row() {
+                Text(`${forumName}吧`)
+                  .fontSize(15)
+                  .fontColor($r('app.color.text_primary'))
+                  .layoutWeight(1)
+                  .maxLines(1)
+                  .textOverflow({ overflow: TextOverflow.Ellipsis })
+                Text('解除屏蔽')
+                  .fontSize(13)
+                  .fontColor(this.themeState.primary)
+                  .padding({ left: 12, right: 12, top: 6, bottom: 6 })
+                  .backgroundColor($r('app.color.card_background'))
+                  .borderRadius(14)
+                  .onClick(() => {
+                    VibratorUtil.light();
+                    this.handleUnblockForum(forumName).catch((err: Error) => {
+                      Logger.error(TAG, `[SettingsPage] unblockForum failed: ${err.message}`);
+                    });
+                  })
+              }
+              .width('100%')
+              .padding({ left: 20, right: 20, top: 12, bottom: 12 })
+              .alignItems(VerticalAlign.Center)
+            }
+          }, (forumName: string) => forumName)
+        }
+        .width('100%')
+        .layoutWeight(1)
+        .divider({
+          strokeWidth: 0.5,
+          color: $r('app.color.divider'),
+          startMargin: 20,
+          endMargin: 20
+        })
+      }
+    }
+    .width('100%')
+    .height('100%')
+    .backgroundColor($r('app.color.page_background'))
+  }
+
   // #127 消息通知菜单项构建器：左侧图标 + 中间标题/描述 + 右侧 Toggle 开关
   @Builder notificationMenuItemBuilder() {
     Row() {
@@ -2208,6 +2353,8 @@ export struct SettingsPage {
             this.forumFabFunctionMenuItemBuilder()
             this.dividerBuilder()
             this.defaultHomePageMenuItemBuilder()
+            this.dividerBuilder()
+            this.blockedForumsMenuItemBuilder()
           }
           .width('100%')
           .backgroundColor($r('app.color.card_background'))
@@ -2387,6 +2534,15 @@ export struct SettingsPage {
       .padding({ top: this.statusBarHeight + TITLE_BAR_HEIGHT })
       .backgroundColor($r('app.color.page_background'))
       .scrollBar(BarState.Off)
+      .bindSheet($$this.showBlockedForumsSheet, this.blockedForumsSheetBuilder(), {
+        detents: [SheetSize.MEDIUM, SheetSize.LARGE],
+        dragBar: true,
+        scrollSizeMode: ScrollSizeMode.CONTINUOUS,
+        backgroundColor: $r('app.color.page_background'),
+        onDisappear: () => {
+          this.showBlockedForumsSheet = false;
+        }
+      })
     }
     .titleBar({
       content: {

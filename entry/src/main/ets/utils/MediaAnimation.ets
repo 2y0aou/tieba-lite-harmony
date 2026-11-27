@@ -42,3 +42,29 @@ export function resolveAnimatedImageUrl(dynamicUrl: string, originalUrl: string,
   }
   return isGifImageUrl(activeUrl) ? activeUrl : '';
 }
+
+/**
+ * 将瀑布流/吧列表中的贴吧低清缩略图/裁切图（w%3D580、wh%3D、abpic、crop 等）
+ * 还原为百度图床无损原图直链，供大图查看器高清展示（配合 fallbackUrls 失败自动回退）
+ */
+export function resolveHighResImageUrl(url: string): string {
+  if (url.length === 0 || isGifImageUrl(url)) {
+    return url;
+  }
+  if (/\/forum\/pic\/item\//i.test(url)) {
+    return url;
+  }
+  if (!/(?:tiebapic|imgsa|imgsrc|hiphotos)\.baidu\.com/i.test(url)) {
+    return url;
+  }
+  const noQuery: string = url.split(/[?#]/, 1)[0];
+  const match: RegExpMatchArray | null = noQuery.match(/\/([a-f0-9]{32,})\.(jpg|jpeg|png|webp)$/i);
+  if (!match || match.length < 3) {
+    return url;
+  }
+  const hash: string = match[1];
+  const ext: string = match[2].toLowerCase();
+  const qIndex: number = url.indexOf('?');
+  const query: string = qIndex >= 0 ? url.slice(qIndex) : '';
+  return `https://tiebapic.baidu.com/forum/pic/item/${hash}.${ext}${query}`;
+}

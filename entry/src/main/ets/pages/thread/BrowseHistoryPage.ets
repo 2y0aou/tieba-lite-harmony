@@ -25,6 +25,7 @@ export struct BrowseHistoryPage {
 
   @Local statusBarHeight: number = 36;
   @Local items: BrowseHistoryItem[] = [];
+  @Local searchKeyword: string = '';
   @Local isLoading: boolean = true;
   @Local themeState: ThemeState = connectTheme();
   @Local materialLevelState: MaterialLevelState = connectMaterialLevel();
@@ -166,12 +167,55 @@ export struct BrowseHistoryPage {
     })
   }
 
+  private getFilteredItems(): BrowseHistoryItem[] {
+    const kw: string = this.searchKeyword.trim().toLowerCase();
+    if (kw.length === 0) {
+      return this.items;
+    }
+    return this.items.filter((item: BrowseHistoryItem) =>
+      item.title.toLowerCase().indexOf(kw) >= 0 ||
+      item.forumName.toLowerCase().indexOf(kw) >= 0 ||
+      item.authorName.toLowerCase().indexOf(kw) >= 0
+    );
+  }
+
   build() {
     HdsNavDestination() {
       Column() {
-        if (!this.isLoading && this.items.length === 0) {
+        if (this.items.length > 0) {
+          Row({ space: 8 }) {
+            SymbolGlyph($r('sys.symbol.magnifyingglass'))
+              .fontSize(15)
+              .fontColor([$r('app.color.text_caption')])
+            TextInput({ placeholder: '搜索标题 / 贴吧 / 作者', text: $$this.searchKeyword })
+              .layoutWeight(1)
+              .height(36)
+              .fontSize(14)
+              .fontColor($r('app.color.text_primary'))
+              .placeholderColor($r('app.color.text_caption'))
+              .backgroundColor(Color.Transparent)
+              .padding({ left: 0, right: 0 })
+            if (this.searchKeyword.length > 0) {
+              Text('清除')
+                .fontSize(12.5)
+                .fontColor(this.themeState.primary)
+                .onClick(() => {
+                  this.searchKeyword = '';
+                })
+            }
+          }
+          .width('100%')
+          .height(38)
+          .padding({ left: 12, right: 12 })
+          .borderRadius(19)
+          .backgroundColor($r('app.color.input_background'))
+          .alignItems(VerticalAlign.Center)
+          .margin({ left: 16, right: 16, top: 6, bottom: 8 })
+        }
+
+        if (!this.isLoading && this.getFilteredItems().length === 0) {
           Column({ space: 8 }) {
-            Text($r('app.string.browse_history_empty'))
+            Text(this.items.length === 0 ? $r('app.string.browse_history_empty') : '没有找到匹配的浏览记录')
               .fontSize(14)
               .fontColor($r('app.color.text_secondary'))
           }
@@ -180,7 +224,7 @@ export struct BrowseHistoryPage {
           .justifyContent(FlexAlign.Center)
         } else {
           List({ scroller: this.scroller }) {
-            ForEach(this.items, (item: BrowseHistoryItem) => {
+            ForEach(this.getFilteredItems(), (item: BrowseHistoryItem) => {
               ListItem() {
                 this.HistoryRow(item)
               }

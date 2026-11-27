@@ -1065,7 +1065,7 @@ export struct ForumPageFull {
                               Logger.error(TAG, `[ForumPageFull] handleDisagree failed: ${err.message}`);
                             });
                           },
-                          onCommentClick: () => this.showCommentToast()
+                          onCommentClick: () => RouterUtil.push(RouterUtil.ROUTE_THREAD_PAGE, new ThreadNavParams(thread.tid, false, true))
                         })
                       }
                     }, (thread: ThreadInfo) => thread.tid.toString())

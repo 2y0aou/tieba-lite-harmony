@@ -66,6 +66,7 @@ export class StringPrefs {
   static readonly AVATAR: StringPreferenceKey = new StringPreferenceKey('avatar', '', 'LoginPage');
   static readonly BAIDUID: StringPreferenceKey = new StringPreferenceKey('baiduid', '', 'WebLoginPage');
   static readonly BDUSS: StringPreferenceKey = new StringPreferenceKey('bduss', '', 'AuthSessionManager');
+  static readonly BLOCKED_FORUMS: StringPreferenceKey = new StringPreferenceKey('blockedForums', '[]', 'BlockManager');
   static readonly BROWSE_HISTORY: StringPreferenceKey = new StringPreferenceKey('browseHistory', '[]', 'BrowseHistoryManager');
   static readonly CLIENT_ID: StringPreferenceKey = new StringPreferenceKey('client_id', '', 'TiebaAPI');
   static readonly CUID: StringPreferenceKey = new StringPreferenceKey('cuid', '', 'LoginPage');
@@ -83,7 +84,7 @@ export class StringPrefs {
   static readonly UUID: StringPreferenceKey = new StringPreferenceKey('uuid', '', 'CryptoUtil');
   static readonly Z_ID: StringPreferenceKey = new StringPreferenceKey('z_id', '', 'TiebaAPI');
 
-  static readonly ALL_STRING: StringPreferenceKey[] = [StringPrefs.AES_CBC_SEC_KEY, StringPrefs.ANDROID_ID, StringPrefs.AVATAR, StringPrefs.BAIDUID, StringPrefs.BDUSS, StringPrefs.BROWSE_HISTORY, StringPrefs.CLIENT_ID, StringPrefs.CUID, StringPrefs.DEVICE_ID, StringPrefs.LITTLE_TAIL, StringPrefs.NAME, StringPrefs.NICKNAME, StringPrefs.RECENT_FORUMS, StringPrefs.SAMPLE_ID, StringPrefs.STOKEN, StringPrefs.TBS, StringPrefs.THREAD_DRAFT, StringPrefs.TIEBA_UID, StringPrefs.UID, StringPrefs.UUID, StringPrefs.Z_ID];
+  static readonly ALL_STRING: StringPreferenceKey[] = [StringPrefs.AES_CBC_SEC_KEY, StringPrefs.ANDROID_ID, StringPrefs.AVATAR, StringPrefs.BAIDUID, StringPrefs.BDUSS, StringPrefs.BLOCKED_FORUMS, StringPrefs.BROWSE_HISTORY, StringPrefs.CLIENT_ID, StringPrefs.CUID, StringPrefs.DEVICE_ID, StringPrefs.LITTLE_TAIL, StringPrefs.NAME, StringPrefs.NICKNAME, StringPrefs.RECENT_FORUMS, StringPrefs.SAMPLE_ID, StringPrefs.STOKEN, StringPrefs.TBS, StringPrefs.THREAD_DRAFT, StringPrefs.TIEBA_UID, StringPrefs.UID, StringPrefs.UUID, StringPrefs.Z_ID];
 }
 
 /** 布尔偏好 key 注册表 */
