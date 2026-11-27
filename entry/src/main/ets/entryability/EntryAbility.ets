@@ -11,7 +11,6 @@ import { AppStorageManager } from '../data/AppStorage';
 import { BooleanPrefs } from '../data/PreferenceKeys';
 import { UserAuthUtil } from '../utils/UserAuthUtil';
 import { NotificationUtil } from '../utils/NotificationUtil';
-import { UpdateNoticeManager } from '../utils/UpdateNoticeManager';
 
 const DOMAIN = 0x0000;
 
@@ -223,17 +222,7 @@ export default class EntryAbility extends UIAbility {
         }
         this.isFrequentCrash = false;
       }
-
-      setTimeout(() => {
-        UpdateNoticeManager.showStartupNoticeIfNeed(this.context).then((didShowNotice: boolean) => {
-          if (!didShowNotice) {
-            return UpdateNoticeManager.checkOnStartup(this.context);
-          }
-          return false;
-        }).catch((updateErr: Error) => {
-          hilog.error(DOMAIN, 'EntryAbility', 'startup update check failed: %{public}s', updateErr.message);
-        });
-      }, 3000);
+      // 更新报告与启动检查迁至 MainPage（账号登录进入主页后触发），避免未登录时打断登录流程
     });
   }
 

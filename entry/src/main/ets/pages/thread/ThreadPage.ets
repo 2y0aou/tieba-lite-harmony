@@ -491,6 +491,7 @@ struct PostItem {
             .alt($r('app.media.startIcon'))
             .syncLoad(false)
             .interpolation(ImageInterpolation.Low)
+            .onClick(() => this.onAuthorClick?.())
           Column({ space: 2 }) {
             Row({ space: 5 }) {
               Text() {
@@ -508,6 +509,7 @@ struct PostItem {
               .maxLines(this.showUsername ? 2 : 1)
               .textOverflow({ overflow: TextOverflow.Ellipsis })
               .flexShrink(1)
+              .onClick(() => this.onAuthorClick?.())
               if (this.post.author.level > 0) {
                 ThreadLevelBadge({ level: this.post.author.level, themeState: this.themeState })
               }
@@ -538,8 +540,6 @@ struct PostItem {
           .alignItems(HorizontalAlign.Start)
         }
         .layoutWeight(1)
-        .hitTestBehavior(HitTestMode.Transparent)
-        .onClick(() => this.onAuthorClick?.())
       } else {
         Text() {
           Span($r('app.string.android_reply_time_floor', formatRelativeTime(this.post.createTime), this.post.floor))
@@ -779,8 +779,12 @@ export function ThreadPageBuilder() {
 export struct ThreadPage {
   private viewModel: ThreadViewModel = new ThreadViewModel();
   private dataSource: CommonDataSource<PostInfo> = new CommonDataSource<PostInfo>();
-  // #72 Scroller 用于跳转楼层后滚动到列表顶部 + #163 bindToScrollable 标题栏滚动模糊
+  // #72 Scroller 用于评论列表滚动 + #163 bindToScrollable 标题栏滚动模糊
   private scroller: Scroller = new Scroller();
+  // 正文页独立 Scroller，与评论页各自保留滚动进度
+  private articleScroller: Scroller = new Scroller();
+  // 小黑盒式「正文 | 评论」双 Tab 跟手横滑控制器
+  private contentTabsController: TabsController = new TabsController();
   // #72 跳转楼层对话框控制器
   private jumpPageDialogController: CustomDialogController | null = null;
   // loadPreviousPage 中 setTimeout 句柄，aboutToDisappear 时清理避免页面销毁后回调报错
@@ -793,11 +797,8 @@ export struct ThreadPage {
   // 避免页面销毁后修改 @Local 触发警告或操作已销毁的 dataSource
   private isDestroyed: boolean = false;
   private hasRecordedHistory: boolean = false;
-  // 小黑盒式正文/回复区左右滑快速切换状态
-  private pendingJumpToReplies: boolean = false;
-  private isInRepliesArea: boolean = false;
-  private savedArticleOffsetY: number = 0;
-  private swipeStartX: number = 0;
+  // 当前激活内容页签：0=正文，1=评论
+  @Local activeTab: number = 0;
 
   @Local tid: number = 0;
   private floorRepliesByPid: Map<number, FloorRepliesState> = new Map();
@@ -889,7 +890,7 @@ export struct ThreadPage {
             this.viewModel.setOnlyAuthor(true);
           }
           if (params.jumpToReplies === true) {
-            this.pendingJumpToReplies = true;
+            this.activeTab = 1;
           }
         } else {
           Logger.error(TAG, `[ThreadPage] invalid tid from params: ${params.tid}`);
@@ -1025,61 +1026,28 @@ export struct ThreadPage {
         Logger.warn(TAG, `[ThreadPage] record browse history failed: ${err.message}`);
       });
     }
-
-    // 从瀑布流点评论图标进帖时，首屏渲染后自动平滑定位到回复区顶部
-    if (this.pendingJumpToReplies && this.hasFirstPostHeader() && !this.isLoading) {
-      this.pendingJumpToReplies = false;
-      this.scrollTimer = setTimeout(() => {
-        this.scrollTimer = -1;
-        if (!this.isDestroyed) {
-          this.jumpToRepliesArea(false);
-        }
-      }, SCROLL_TO_FIRST_REPLY_DELAY_MS);
-    }
   }
 
-  /** 小黑盒式快速切到回复区：记住正文阅读位置并平滑滚到回复区头部 */
-  private jumpToRepliesArea(withHaptic: boolean = true): void {
-    if (!this.hasFirstPostHeader()) {
+  /** 小黑盒式「正文 / 评论」双页签切换（原生 Tabs 动画联动） */
+  private switchContentTab(tabIndex: number, withHaptic: boolean = true): void {
+    const target: number = tabIndex === 1 ? 1 : 0;
+    if (this.activeTab === target) {
       return;
     }
+    this.activeTab = target;
     try {
-      const currentY: number = this.scroller.currentOffset()?.yOffset ?? 0;
-      if (!this.isInRepliesArea) {
-        this.savedArticleOffsetY = Math.max(0, currentY);
-      }
-      this.scroller.scrollToIndex(1, true, ScrollAlign.START);
-      this.isInRepliesArea = true;
+      this.contentTabsController.changeIndex(target);
       if (withHaptic) {
         VibratorUtil.light();
       }
     } catch (err) {
-      Logger.warn(TAG, `[ThreadPage] jumpToRepliesArea failed: ${(err as Error).message}`);
+      Logger.warn(TAG, `[ThreadPage] switchContentTab failed: ${(err as Error).message}`);
     }
   }
 
-  /** 小黑盒式右滑返回正文：平滑滚回离开正文前的精确位置 */
-  private jumpBackToArticle(): void {
-    try {
-      this.scroller.scrollTo({
-        xOffset: 0,
-        yOffset: Math.max(0, this.savedArticleOffsetY),
-        animation: { duration: 280, curve: Curve.FastOutSlowIn }
-      });
-      this.isInRepliesArea = false;
-      VibratorUtil.light();
-    } catch (err) {
-      Logger.warn(TAG, `[ThreadPage] jumpBackToArticle failed: ${(err as Error).message}`);
-    }
-  }
-
-  /** 底部悬浮栏评论图标智能来回切换：正文 ↔ 回复区 */
+  /** 底部悬浮栏评论图标切换：正文 ↔ 评论 */
   private toggleRepliesAndArticle(): void {
-    if (!this.isInRepliesArea && this.hasFirstPostHeader()) {
-      this.jumpToRepliesArea();
-    } else {
-      this.jumpBackToArticle();
-    }
+    this.switchContentTab(this.activeTab === 0 ? 1 : 0);
   }
 
   /** 贴内链接点击：贴吧内链应用内直达帖子，其余外链呼起系统浏览器 */
@@ -1600,8 +1568,11 @@ export struct ThreadPage {
   toggleOnlyAuthor(fromReplyHeader: boolean = false): void {
     this.onlyAuthorMode = !this.onlyAuthorMode;
     this.viewModel.setOnlyAuthor(this.onlyAuthorMode);
+    if (!fromReplyHeader) {
+      this.switchContentTab(1, false);
+    }
     this.loadPosts(true).then(() => {
-      this.scrollToTopSoon(fromReplyHeader && this.hasFirstPostHeader() ? 1 : 0);
+      this.scrollToTopSoon(0);
     }).catch((err: Error) => {
       Logger.error(TAG, `[ThreadPage] toggleOnlyAuthor reload failed: ${err.message}`);
     });
@@ -1618,6 +1589,7 @@ export struct ThreadPage {
     this.sortOrder = sort;
     AppStorage.setOrCreate<number>('thread_default_sort', sort);
     this.viewModel.setSort(sort);
+    this.switchContentTab(1, false);
     this.loadPosts(true).then(() => {
       // 列表已整体换页，回到顶部（对齐跳页行为）
       this.scrollToTopSoon();
@@ -1679,7 +1651,8 @@ export struct ThreadPage {
       }
       if (success) {
         this.syncState();
-        // 滚动到列表顶部
+        this.switchContentTab(1, false);
+        // 滚动到评论列表顶部
         this.scroller.scrollToIndex(0, false);
       } else {
         this.errorMessage = this.viewModel.loadingState.error;
@@ -1725,6 +1698,7 @@ export struct ThreadPage {
    * - 倒序/热门：新回复在首页附近，刷新第一页并回到顶部
    */
   private locateAfterReply(): void {
+    this.switchContentTab(1, false);
     if (this.sortOrder !== SORT_ASC) {
       this.loadPosts(true).then(() => {
         this.scrollToTopSoon();
@@ -1819,6 +1793,7 @@ export struct ThreadPage {
     });
   }
 
+  /** 顶栏居中恢复原始贴吧胶囊（吧头像 + 吧名，点击直达对应贴吧） */
   @Builder
   forumAvatarBuilder() {
     Row() {
@@ -1909,10 +1884,10 @@ export struct ThreadPage {
         Column() {
           SymbolGlyph($r('sys.symbol.message'))
             .fontSize(16)
-            .fontColor([$r('app.color.text_secondary')])
+            .fontColor([this.activeTab === 1 ? this.themeState.primary : $r('app.color.text_secondary')])
           Text(formatCount(Math.max(0, this.threadReplyNum - 1)))
             .fontSize(10.5)
-            .fontColor($r('app.color.text_secondary'))
+            .fontColor(this.activeTab === 1 ? this.themeState.primary : $r('app.color.text_secondary'))
             .fontWeight(FontWeight.Medium)
             .maxLines(1)
             .textOverflow({ overflow: TextOverflow.Ellipsis })
@@ -2447,105 +2422,187 @@ export struct ThreadPage {
 
   @Builder
   PostList() {
-    List({ scroller: this.scroller }) {
-      // 帖子信息栏（标题 + 楼主正文 fragments + 楼主图片 mediaList + 浏览/评论/日期/点赞）
-      // 标题与楼主正文/图片合并显示在信息栏，避免分页后标题与内容分开
-      this.FirstPostHeader()
+    // 小黑盒式原生 Tabs 双页签：Tab 0 = 正文，Tab 1 = 评论，跟手左右滑动切换且原生拦截子项误触点击
+    Tabs({
+      barPosition: BarPosition.Start,
+      index: this.activeTab,
+      controller: this.contentTabsController
+    }) {
+      // Tab 0：正文独立阅读页（保留独立滚动进度）
+      TabContent() {
+        List({ scroller: this.articleScroller }) {
+          if (this.isLoading && !this.hasFirstPostHeader()) {
+            ListItem() {
+              LoadingView({ message: getResourceString($r('app.string.loading')) })
+                .height(220)
+            }
+          } else {
+            this.FirstPostHeader()
 
-      ListItemGroup({ header: this.ReplyFilters() }) {
-        this.LoadPrevButton()
-
-        // 楼层列表
-        LazyForEach(this.dataSource, (post: PostInfo, index: number) => {
-          ListItem() {
-            PostItem({
-              post: post,
-              isAuthor: isSameTiebaAuthor(post.author, this.threadAuthor.uid, this.threadAuthor.portrait,
-                this.threadAuthor.name),
-              threadAuthorUid: this.threadAuthor.uid,
-              threadAuthorPortrait: this.threadAuthor.portrait,
-              threadAuthorName: this.threadAuthor.name,
-              immersiveMode: this.isImmersiveMode,
-              imageLoadType: this.imageLoadTypeState.value,
-              isWifi: this.isWifiState.value,
-              themeState: this.themeState,
-              commentPreviewEnabled: this.commentPreviewState.value,
-              showUsername: this.tiebaUsernameState.value,
-              onAgreeClick: (p: PostInfo) => {
-                this.handleAgree(p).catch((err: Error) => {
-                  Logger.error(TAG, `[ThreadPage] handleAgree failed: ${err.message}`);
-                });
-              },
-              onDisagreeClick: (p: PostInfo) => {
-                this.handleDisagree(p).catch((err: Error) => {
-                  Logger.error(TAG, `[ThreadPage] handleDisagree failed: ${err.message}`);
-                });
-              },
-              onViewReplies: () => this.openCommentsDrawer(post),
-              onReply: () => this.openReplyBox(post),
-              onAuthorClick: () => this.navigateToUserProfile(
-                post.author.portrait,
-                post.author.name,
-                post.author.uid
-              ),
-              onAtClick: (uid: number, name: string) => this.navigateToUserProfile('', name, uid),
-              onLinkClick: (url: string) => this.openLinkUrl(url)
-            })
+            // 正文与评论衔接轻提示条（非顶栏）：展示「正文 · 评论 N」，点击或左滑跟手进入评论页
+            if (this.hasFirstPostHeader()) {
+              ListItem() {
+                Row() {
+                  Row({ space: 8 }) {
+                    Text('正文')
+                      .fontSize(13.5)
+                      .fontWeight(FontWeight.Bold)
+                      .fontColor($r('app.color.text_primary'))
+                    Text('/')
+                      .fontSize(12)
+                      .fontColor($r('app.color.text_caption'))
+                    Text(this.threadReplyNum > 1
+                      ? `评论 ${Math.max(0, this.threadReplyNum - 1)}`
+                      : '评论')
+                      .fontSize(13.5)
+                      .fontWeight(FontWeight.Medium)
+                      .fontColor(this.themeState.primary)
+                  }
+                  .alignItems(VerticalAlign.Center)
+                  Blank()
+                  Row({ space: 4 }) {
+                    Text('左滑看评论')
+                      .fontSize(12)
+                      .fontColor($r('app.color.text_caption'))
+                    SymbolGlyph($r('sys.symbol.chevron_right'))
+                      .fontSize(13)
+                      .fontColor([$r('app.color.text_caption')])
+                  }
+                  .alignItems(VerticalAlign.Center)
+                }
+                .width('100%')
+                .padding({ left: 16, right: 16, top: 14, bottom: 14 })
+                .backgroundColor($r('app.color.android_post_background'))
+                .alignItems(VerticalAlign.Center)
+                .onClick(() => {
+                  this.switchContentTab(1);
+                })
+              }
+            }
           }
-        }, (post: PostInfo) => `${post.pid}`)
 
-        if (this.isLoading && this.postCount > 0) {
-          ListItem() {
-            LoadingView({ message: getResourceString($r('app.string.loading_more')) })
-              .height(60)
-              .margin({ left: 0, right: 0 })
+          // 悬浮底栏模式下的正文末尾透明避让区
+          ListItem()
+            .height(this.threadFloatingBarState.value && !this.isImmersiveMode ?
+              FLOATING_BAR_HEIGHT + FLOATING_BAR_BOTTOM_MARGIN + 20 : 16)
+        }
+        .width('100%')
+        .height('100%')
+        .divider({ strokeWidth: 0 })
+        .scrollBar(BarState.Off)
+        .edgeEffect(EdgeEffect.Spring, { alwaysEnabled: true })
+        .clip(false)
+        .backgroundColor($r('app.color.android_post_background'))
+      }
+      .tabBar('')
+      .clip(false)
+
+      // Tab 1：评论独立楼层页（与小黑盒评论页对齐，支持排序/只看楼主/楼中楼抽屉）
+      TabContent() {
+        List({ scroller: this.scroller }) {
+          ListItemGroup({ header: this.ReplyFilters() }) {
+            this.LoadPrevButton()
+
+            if (this.isLoading && this.postCount === 0) {
+              ListItem() {
+                LoadingView({ message: getResourceString($r('app.string.loading')) })
+                  .height(180)
+              }
+            } else if (!this.isLoading && this.postCount === 0) {
+              ListItem() {
+                Column({ space: 8 }) {
+                  Text(this.onlyAuthorMode ? '楼主暂未发布其他回复' : '暂无评论，快来抢沙发')
+                    .fontSize(14)
+                    .fontColor($r('app.color.text_secondary'))
+                }
+                .width('100%')
+                .padding({ top: 72, bottom: 72 })
+                .alignItems(HorizontalAlign.Center)
+              }
+            } else {
+              // 楼层列表
+              LazyForEach(this.dataSource, (post: PostInfo, index: number) => {
+                ListItem() {
+                  PostItem({
+                    post: post,
+                    isAuthor: isSameTiebaAuthor(post.author, this.threadAuthor.uid, this.threadAuthor.portrait,
+                      this.threadAuthor.name),
+                    threadAuthorUid: this.threadAuthor.uid,
+                    threadAuthorPortrait: this.threadAuthor.portrait,
+                    threadAuthorName: this.threadAuthor.name,
+                    immersiveMode: this.isImmersiveMode,
+                    imageLoadType: this.imageLoadTypeState.value,
+                    isWifi: this.isWifiState.value,
+                    themeState: this.themeState,
+                    commentPreviewEnabled: this.commentPreviewState.value,
+                    showUsername: this.tiebaUsernameState.value,
+                    onAgreeClick: (p: PostInfo) => {
+                      this.handleAgree(p).catch((err: Error) => {
+                        Logger.error(TAG, `[ThreadPage] handleAgree failed: ${err.message}`);
+                      });
+                    },
+                    onDisagreeClick: (p: PostInfo) => {
+                      this.handleDisagree(p).catch((err: Error) => {
+                        Logger.error(TAG, `[ThreadPage] handleDisagree failed: ${err.message}`);
+                      });
+                    },
+                    onViewReplies: () => this.openCommentsDrawer(post),
+                    onReply: () => this.openReplyBox(post),
+                    onAuthorClick: () => this.navigateToUserProfile(
+                      post.author.portrait,
+                      post.author.name,
+                      post.author.uid
+                    ),
+                    onAtClick: (uid: number, name: string) => this.navigateToUserProfile('', name, uid),
+                    onLinkClick: (url: string) => this.openLinkUrl(url)
+                  })
+                }
+              }, (post: PostInfo) => `${post.pid}`)
+            }
+
+            if (this.isLoading && this.postCount > 0) {
+              ListItem() {
+                LoadingView({ message: getResourceString($r('app.string.loading_more')) })
+                  .height(60)
+                  .margin({ left: 0, right: 0 })
+              }
+            }
+
+            // 悬浮底栏模式下的列表末尾透明避让区：既不截断内容（允许滚到悬浮胶囊后穿透模糊），又确保末楼不被遮挡
+            ListItem()
+              .height(this.threadFloatingBarState.value && !this.isImmersiveMode ?
+                FLOATING_BAR_HEIGHT + FLOATING_BAR_BOTTOM_MARGIN + 20 : 12)
           }
         }
-
-        // 悬浮底栏模式下的列表末尾透明避让区：既不截断内容（允许滚到悬浮胶囊后穿透模糊），又确保末楼不被遮挡
-        ListItem()
-          .height(this.threadFloatingBarState.value && !this.isImmersiveMode ?
-            FLOATING_BAR_HEIGHT + FLOATING_BAR_BOTTOM_MARGIN + 20 : 12)
+        .width('100%')
+        .height('100%')
+        .divider({ strokeWidth: 0 })
+        .scrollBar(BarState.Off)
+        .edgeEffect(EdgeEffect.Spring, { alwaysEnabled: true })
+        .cachedCount(8, true)
+        // #194 clip(false) + cachedCount(_, true) 让内容穿透到 titleBar 下方做模糊（对齐 HomePage 混合式）
+        .clip(false)
+        .backgroundColor($r('app.color.android_post_background'))
+        .onScrollIndex((_start: number, end: number) => {
+          if (this.postCount > 0 && end >= this.postCount - 4 && this.hasMore && !this.isLoading) {
+            this.onReachEnd();
+          }
+        })
+        .onReachEnd(() => this.onReachEnd())
       }
+      .tabBar('')
+      .clip(false)
     }
+    .barHeight(0)
+    .scrollable(true)
+    .animationDuration(260)
     .width('100%')
     .layoutWeight(1)
-    .divider({ strokeWidth: 0 })
-    .scrollBar(BarState.Off)
-    .edgeEffect(EdgeEffect.Spring, { alwaysEnabled: true })
-    .cachedCount(8, true)
-    // #194 clip(false) + cachedCount(_, true) 让内容穿透到 titleBar 下方做模糊（对齐 HomePage 混合式）
     .clip(false)
     .backgroundColor($r('app.color.android_post_background'))
-    .onScrollIndex((start: number, end: number) => {
-      this.isInRepliesArea = this.hasFirstPostHeader() ? start >= 1 : true;
-      if (this.postCount > 0 && end >= this.postCount - 4 && this.hasMore && !this.isLoading) {
-        this.onReachEnd();
-      }
+    .onChange((index: number) => {
+      this.activeTab = index;
     })
-    .parallelGesture(
-      // 小黑盒式左右滑快速切换：正文左滑直达回复区，回复区非左边缘右滑返回正文原位置（不拦截垂直滚动与系统边缘返回）
-      PanGesture({ direction: PanDirection.Horizontal, distance: 24 })
-        .onActionStart((event: GestureEvent) => {
-          this.swipeStartX = event.fingerList && event.fingerList.length > 0 ? event.fingerList[0].globalX : 100;
-        })
-        .onActionEnd((event: GestureEvent) => {
-          if (this.showCommentsDrawer || this.showReplySheet || !this.hasFirstPostHeader()) {
-            return;
-          }
-          const dx: number = event.offsetX;
-          const dy: number = event.offsetY;
-          if (Math.abs(dx) < 56 || Math.abs(dx) < Math.abs(dy) * 1.6) {
-            return;
-          }
-          if (dx < 0 && !this.isInRepliesArea) {
-            this.jumpToRepliesArea();
-          } else if (dx > 0 && this.isInRepliesArea && this.swipeStartX > 36) {
-            this.jumpBackToArticle();
-          }
-        })
-    )
-    .onReachEnd(() => this.onReachEnd())
     .bindSheet($$this.showCommentsDrawer, this.CommentsDrawer(), {
       detents: ['76%', SheetSize.LARGE],
       scrollSizeMode: ScrollSizeMode.CONTINUOUS,
@@ -2592,6 +2649,8 @@ export struct ThreadPage {
                   .backgroundColor($r('app.color.input_background'))
                   .alt($r('app.media.startIcon'))
                   .syncLoad(false)
+                  .onClick(() => this.navigateToUserProfile(
+                    this.threadAuthor.portrait, this.threadAuthor.name, this.threadAuthor.uid))
                 Column({ space: 2 }) {
                   Row({ space: 5 }) {
                     Text() {
@@ -2611,6 +2670,8 @@ export struct ThreadPage {
                     .maxLines(this.tiebaUsernameState.value ? 2 : 1)
                     .textOverflow({ overflow: TextOverflow.Ellipsis })
                     .flexShrink(1)
+                    .onClick(() => this.navigateToUserProfile(
+                      this.threadAuthor.portrait, this.threadAuthor.name, this.threadAuthor.uid))
                     if (this.threadAuthor.level > 0) {
                       ThreadLevelBadge({ level: this.threadAuthor.level, themeState: this.themeState })
                     }
@@ -2638,9 +2699,6 @@ export struct ThreadPage {
               .width('100%')
               .alignItems(VerticalAlign.Center)
               .margin({ bottom: 12 })
-              .hitTestBehavior(HitTestMode.Transparent)
-              .onClick(() => this.navigateToUserProfile(
-                this.threadAuthor.portrait, this.threadAuthor.name, this.threadAuthor.uid))
             }
 
             // 楼主正文 fragments（TEXT/LINK/AT/EMOJI），与 PostItem 渲染逻辑一致
@@ -2796,18 +2854,58 @@ export struct ThreadPage {
   @Builder
   ReplyFilters() {
     Row() {
-      Text($r('app.string.android_reply_count', Math.max(0, this.threadReplyNum - 1)))
-        .fontSize(13)
-        .fontWeight(FontWeight.Medium)
-        .fontColor($r('app.color.text_primary'))
-      Blank()
-      Row({ space: 2 }) {
-        this.ReplyFilterOption($r('app.string.forum_filter_all'), false)
-        this.ReplyFilterOption($r('app.string.menu_see_lz'), true)
+      Row({ space: 6 }) {
+        if (this.hasFirstPostHeader()) {
+          Row({ space: 2 }) {
+            SymbolGlyph($r('sys.symbol.chevron_left'))
+              .fontSize(12)
+              .fontColor([$r('app.color.text_secondary')])
+            Text('正文')
+              .fontSize(12.5)
+              .fontColor($r('app.color.text_secondary'))
+          }
+          .height(26)
+          .padding({ left: 6, right: 8 })
+          .borderRadius(999)
+          .backgroundColor($r('app.color.input_background'))
+          .alignItems(VerticalAlign.Center)
+          .onClick(() => {
+            this.switchContentTab(0);
+          })
+        }
+        Text($r('app.string.android_reply_count', Math.max(0, this.threadReplyNum - 1)))
+          .fontSize(13.5)
+          .fontWeight(FontWeight.Medium)
+          .fontColor($r('app.color.text_primary'))
       }
-      .padding(2)
-      .borderRadius(999)
-      .backgroundColor($r('app.color.input_background'))
+      .alignItems(VerticalAlign.Center)
+      Blank()
+      Row({ space: 8 }) {
+        Row({ space: 2 }) {
+          this.ReplyFilterOption($r('app.string.forum_filter_all'), false)
+          this.ReplyFilterOption($r('app.string.menu_see_lz'), true)
+        }
+        .padding(2)
+        .borderRadius(999)
+        .backgroundColor($r('app.color.input_background'))
+
+        Row({ space: 3 }) {
+          Text(this.sortOrder === 1 ? '倒序' : (this.sortOrder === 2 ? '热门' : '正序'))
+            .fontSize(12)
+            .fontWeight(FontWeight.Medium)
+            .fontColor($r('app.color.text_secondary'))
+        }
+        .height(28)
+        .padding({ left: 10, right: 10 })
+        .borderRadius(999)
+        .backgroundColor($r('app.color.input_background'))
+        .alignItems(VerticalAlign.Center)
+        .onClick(() => {
+          VibratorUtil.light();
+          this.showSortMenu();
+        })
+      }
+      .alignItems(VerticalAlign.Center)
     }
     .width('100%')
     .padding({ left: 16, right: 16, top: 10, bottom: 8 })
@@ -3107,7 +3205,7 @@ export struct ThreadPage {
       // 避让状态栏：setWindowLayoutFullScreen(true) 全屏模式下 titleBar 默认不避让状态栏
       avoidLayoutSafeArea: true
     })
-    .bindToScrollable([this.scroller])
+    .bindToScrollable([this.articleScroller, this.scroller])
     // #72 沉浸模式隐藏 titleBar，保留纯净阅读（动态绑定 isImmersiveMode）
     .hideTitleBar(this.isImmersiveMode)
     .backgroundColor($r('app.color.android_post_background'))

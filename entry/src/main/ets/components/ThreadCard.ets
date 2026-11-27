@@ -502,6 +502,7 @@ export struct ThreadCard {
           .alt($r('app.media.startIcon'))
           .syncLoad(false)
           .interpolation(ImageInterpolation.Low)
+          .onClick(() => this.onAuthorClick?.())
         Column({ space: 2 }) {
           Text() {
             Span(getTiebaPrimaryName(this.thread.author.nickname, this.thread.author.name))
@@ -519,6 +520,7 @@ export struct ThreadCard {
           }
           .maxLines(this.tiebaUsernameState.value ? 2 : 1)
           .textOverflow({ overflow: TextOverflow.Ellipsis })
+          .onClick(() => this.onAuthorClick?.())
           Text(this.thread.author.ipAddress.length > 0
             ? `${formatRelativeTime(this.thread.createTime)} · IP属地: ${this.thread.author.ipAddress}`
             : formatRelativeTime(this.thread.createTime))
@@ -529,8 +531,6 @@ export struct ThreadCard {
         .alignItems(HorizontalAlign.Start)
       }
       .layoutWeight(1)
-      .hitTestBehavior(HitTestMode.Transparent)
-      .onClick(() => this.onAuthorClick?.())
 
       if (this.onDisagreeClick || (this.onBlockForumClick && this.thread.forumName.length > 0)) {
         Row() {

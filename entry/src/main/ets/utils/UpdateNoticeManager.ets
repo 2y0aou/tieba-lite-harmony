@@ -10,12 +10,30 @@ const TAG: string = 'UpdateNoticeManager';
 
 export class UpdateNoticeManager {
   private static isDialogShowing: boolean = false;
+  // 登录后启动更新检查单次守卫：避免重进 MainPage 重复弹窗
+  private static hasRunPostLoginStartupCheck: boolean = false;
   // 当前对话框的 ComponentContent，关闭时需 dispose 释放资源
   private static currentContent: ComponentContent<UpdateContentParams> | null = null;
   // 当前对话框对应的 release 是否为预发行版（用于 closeIfShowingPrerelease 判断）
   private static currentReleaseIsPrerelease: boolean = false;
   // 当前对话框关联的 UIContext（closeIfShowingPrerelease 无参调用时复用，避免外部传参）
   private static currentUiContext: UIContext | null = null;
+
+  /** 账号登录进入主页后触发一次更新报告/新版本检查 */
+  static async runPostLoginStartupCheck(context: common.UIAbilityContext): Promise<void> {
+    if (UpdateNoticeManager.hasRunPostLoginStartupCheck) {
+      return;
+    }
+    UpdateNoticeManager.hasRunPostLoginStartupCheck = true;
+    try {
+      const didShowNotice: boolean = await UpdateNoticeManager.showStartupNoticeIfNeed(context);
+      if (!didShowNotice) {
+        await UpdateNoticeManager.checkOnStartup(context);
+      }
+    } catch (err) {
+      Logger.error(TAG, `[UpdateNoticeManager] runPostLoginStartupCheck failed: ${(err as Error).message}`);
+    }
+  }
 
   static async checkOnStartup(context: common.UIAbilityContext): Promise<boolean> {
     if (UpdateNoticeManager.isDialogShowing) {

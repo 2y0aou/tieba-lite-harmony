@@ -9,9 +9,12 @@
 //   - TabBar 激活态 scale 1.06 + springMotion 弹性动画（对齐博客 customTabBar）
 
 import { curves } from '@kit.ArkUI';
+import { common } from '@kit.AbilityKit';
 import { hilog } from '@kit.PerformanceAnalysisKit';
 import { HdsNavDestination, HdsTabs, HdsTabsController, hdsMaterial } from '@kit.UIDesignKit';
 import { VibratorUtil } from '../../utils/VibratorUtil';
+import { UpdateNoticeManager } from '../../utils/UpdateNoticeManager';
+import { CredentialVault } from '../../data/CredentialVault';
 import { HomePage } from './HomePage';
 import { FavoritePage } from './FavoritePage';
 import { MessagePage } from './MessagePage';
@@ -54,6 +57,7 @@ export struct MainPage {
   /** 默认启动页（0=首页/1=收藏/2=消息/3=我的），aboutToAppear 读取后设置 currentOriginalIndex */
   @Local defaultHomePageState: DefaultHomePageState = connectDefaultHomePage();
   @Local mainTabRefreshState: MainTabRefreshState = connectMainTabRefresh();
+  private updateCheckTimer: number = -1;
 
   aboutToAppear(): void {
     // 读取默认启动页偏好：若目标 Tab 可见则切换到该 Tab，否则回退到首页
@@ -73,6 +77,35 @@ export struct MainPage {
     // EntryAbility.onCreate 在 aboutToAppear 之前执行，pendingAppLinkingTid 已写入
     // @Monitor 不会触发初始值回调，需在此显式调用一次 handleAppLinking
     this.handleAppLinking();
+
+    // 账号登录进入主页后再弹出更新报告与版本检查（延迟 1.2s 等首屏稳定）
+    if (this.updateCheckTimer >= 0) {
+      clearTimeout(this.updateCheckTimer);
+    }
+    this.updateCheckTimer = setTimeout(() => {
+      this.updateCheckTimer = -1;
+      this.triggerPostLoginUpdateNotice().catch((err: Error) => {
+        hilog.error(DOMAIN, TAB_LOG_TAG, 'post-login update check failed: %{public}s', err.message);
+      });
+    }, 1200);
+  }
+
+  aboutToDisappear(): void {
+    if (this.updateCheckTimer >= 0) {
+      clearTimeout(this.updateCheckTimer);
+      this.updateCheckTimer = -1;
+    }
+  }
+
+  private async triggerPostLoginUpdateNotice(): Promise<void> {
+    const bduss: string = await CredentialVault.getBduss();
+    if (bduss.length === 0) {
+      return;
+    }
+    const abilityContext = this.getUIContext().getHostContext() as common.UIAbilityContext | undefined;
+    if (abilityContext) {
+      await UpdateNoticeManager.runPostLoginStartupCheck(abilityContext);
+    }
   }
 
   /**
