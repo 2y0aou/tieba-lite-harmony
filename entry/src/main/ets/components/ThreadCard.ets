@@ -493,22 +493,6 @@ export struct ThreadCard {
   }
 
   @Builder
-  FeedAction(symbolRes: Resource, label: string | Resource, color: ResourceColor, onTap: () => void) {
-    Row({ space: 5 }) {
-      SymbolGlyph(symbolRes)
-        .fontSize(16)
-        .fontColor([color])
-      Text(label)
-        .fontSize(12)
-        .fontColor(color)
-    }
-    .layoutWeight(1)
-    .justifyContent(FlexAlign.Center)
-    .height(36)
-    .onClick(onTap)
-  }
-
-  @Builder
   FeedContent() {
     Column() {
       this.FeedAuthor()
@@ -578,19 +562,51 @@ export struct ThreadCard {
         this.HotPostPreview()
       }
 
+      // 直接读取 this.thread.*，避免 @ReusableV2 下多参数按值传递 @Builder 导致复用卡片显示上一条帖子的旧评论/点赞数
       Row() {
-        this.FeedAction($r('sys.symbol.share'),
-          this.thread.shareNum > 0 ? formatCount(this.thread.shareNum) : $r('app.string.menu_share'),
-          $r('app.color.post_metadata'), () => {
-            this.shareThread();
-          })
-        this.FeedAction($r('sys.symbol.message'),
-          this.thread.replyNum > 0 ? formatCount(this.thread.replyNum) : $r('app.string.reply_button_label'),
-          $r('app.color.post_metadata'), () => this.onCommentClick?.(this.thread))
-        this.FeedAction(this.thread.isAgreed ? $r('sys.symbol.heart_fill') : $r('sys.symbol.heart'),
-          this.thread.agreeNum > 0 ? formatCount(this.thread.agreeNum) : $r('app.string.android_agree'),
-          this.thread.isAgreed ? this.themeState.primary : $r('app.color.post_metadata'),
-          () => this.onAgreeClick?.(this.thread))
+        Row({ space: 5 }) {
+          SymbolGlyph($r('sys.symbol.share'))
+            .fontSize(16)
+            .fontColor([$r('app.color.post_metadata')])
+          Text(this.thread.shareNum > 0 ? formatCount(this.thread.shareNum) : $r('app.string.menu_share'))
+            .fontSize(12)
+            .fontColor($r('app.color.post_metadata'))
+        }
+        .layoutWeight(1)
+        .justifyContent(FlexAlign.Center)
+        .height(36)
+        .hitTestBehavior(HitTestMode.Transparent)
+        .onClick(() => {
+          this.shareThread();
+        })
+
+        Row({ space: 5 }) {
+          SymbolGlyph($r('sys.symbol.message'))
+            .fontSize(16)
+            .fontColor([$r('app.color.post_metadata')])
+          Text(this.thread.replyNum > 0 ? formatCount(this.thread.replyNum) : $r('app.string.reply_button_label'))
+            .fontSize(12)
+            .fontColor($r('app.color.post_metadata'))
+        }
+        .layoutWeight(1)
+        .justifyContent(FlexAlign.Center)
+        .height(36)
+        .hitTestBehavior(HitTestMode.Transparent)
+        .onClick(() => this.onCommentClick?.(this.thread))
+
+        Row({ space: 5 }) {
+          SymbolGlyph(this.thread.isAgreed ? $r('sys.symbol.heart_fill') : $r('sys.symbol.heart'))
+            .fontSize(16)
+            .fontColor([this.thread.isAgreed ? this.themeState.primary : $r('app.color.post_metadata')])
+          Text(this.thread.agreeNum > 0 ? formatCount(this.thread.agreeNum) : $r('app.string.android_agree'))
+            .fontSize(12)
+            .fontColor(this.thread.isAgreed ? this.themeState.primary : $r('app.color.post_metadata'))
+        }
+        .layoutWeight(1)
+        .justifyContent(FlexAlign.Center)
+        .height(36)
+        .hitTestBehavior(HitTestMode.Transparent)
+        .onClick(() => this.onAgreeClick?.(this.thread))
       }
       .width('100%')
       .margin({ top: 4, bottom: 2 })

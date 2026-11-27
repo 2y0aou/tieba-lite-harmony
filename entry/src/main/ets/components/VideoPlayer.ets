@@ -942,7 +942,7 @@ export struct VideoCoverPlaceholder {
         }
         .width(56)
         .height(56)
-        .hitTestBehavior(HitTestMode.Block)
+        .hitTestBehavior(HitTestMode.Transparent)
         .onClick(() => {
           this.isActivated = true;
         })

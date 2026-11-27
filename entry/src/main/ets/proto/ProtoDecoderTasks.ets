@@ -267,15 +267,27 @@ export function decodePbPageResTask(bytes: Uint8Array): SendablePbPageResult {
           const threadReader: ProtoReader = dataReader.readMessage();
           while (!threadReader.isEnd()) {
             const threadTag: ProtoTag = threadReader.readTag();
-            if (threadTag.fieldNumber === 2) {
-              threadTid = threadReader.readVarint();
-              result.thread.tid = threadTid;
+            if (threadTag.fieldNumber === 1 || threadTag.fieldNumber === 2) {
+              const tidValue: number = threadReader.readVarint();
+              if (tidValue > 0) {
+                threadTid = tidValue;
+                result.thread.tid = tidValue;
+              }
             } else if (threadTag.fieldNumber === 3) {
               result.thread.title = threadReader.readString();
             } else if (threadTag.fieldNumber === 4) {
               result.thread.replyNum = threadReader.readVarint();
             } else if (threadTag.fieldNumber === 5) {
               result.thread.viewNum = threadReader.readVarint();
+            } else if (threadTag.fieldNumber === 18) {
+              const authorReader: ProtoReader = threadReader.readMessage();
+              const embeddedAuthor: SendableUserInfo = decodeUserInline(authorReader);
+              if (embeddedAuthor.uid > 0 || embeddedAuthor.name.length > 0 || embeddedAuthor.nickname.length > 0) {
+                result.thread.author = embeddedAuthor;
+                if (embeddedAuthor.uid > 0) {
+                  threadAuthorId = embeddedAuthor.uid;
+                }
+              }
             } else if (threadTag.fieldNumber === 28) {
               result.thread.forumName = threadReader.readString();
             } else if (threadTag.fieldNumber === 155) {
@@ -298,6 +310,11 @@ export function decodePbPageResTask(bytes: Uint8Array): SendablePbPageResult {
               result.thread.createTime = threadReader.readVarint();
             } else if (threadTag.fieldNumber === 56) {
               threadAuthorId = threadReader.readVarint();
+            } else if (threadTag.fieldNumber === 124) {
+              const agreeVal: number = threadReader.readVarint();
+              if (result.thread.agreeNum === 0) {
+                result.thread.agreeNum = agreeVal;
+              }
             } else if (threadTag.fieldNumber === 126) {
               // agree（AgreeInfo）
               const agreeReader: ProtoReader = threadReader.readMessage();
@@ -305,6 +322,8 @@ export function decodePbPageResTask(bytes: Uint8Array): SendablePbPageResult {
                 const agreeTag: ProtoTag = agreeReader.readTag();
                 if (agreeTag.fieldNumber === 1) {
                   result.thread.agreeNum = agreeReader.readVarint();
+                } else if (agreeTag.fieldNumber === 2) {
+                  result.thread.isAgreed = agreeReader.readVarint() !== 0;
                 } else if (agreeTag.fieldNumber === 4) {
                   result.thread.disagreeNum = agreeReader.readVarint();
                 } else {
@@ -503,6 +522,7 @@ function rebuildThreadInfo(s: SendableThreadInfo): ThreadInfo {
   t.viewNum = s.viewNum;
   t.agreeNum = s.agreeNum;
   t.disagreeNum = s.disagreeNum;
+  t.isAgreed = s.isAgreed;
   t.isTop = s.isTop;
   t.isGood = s.isGood;
   t.isEssence = s.isEssence;

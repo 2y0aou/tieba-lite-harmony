@@ -99,6 +99,7 @@ export class SendableThreadInfo {
   viewNum: number = 0;
   agreeNum: number = 0;
   disagreeNum: number = 0;
+  isAgreed: boolean = false;
   isTop: boolean = false;
   isGood: boolean = false;
   isEssence: boolean = false;

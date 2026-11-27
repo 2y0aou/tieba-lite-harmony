@@ -327,12 +327,29 @@ struct ThreadLevelBadge {
   }
 }
 
+/** 三重匹配（uid → portrait → name）判断用户是否为当前帖子楼主，避免楼中楼 uid 缺失时漏标 */
+function isSameTiebaAuthor(user: UserInfo, authorUid: number, authorPortrait: string, authorName: string): boolean {
+  if (authorUid > 0 && user.uid > 0 && user.uid === authorUid) {
+    return true;
+  }
+  if (authorPortrait.length > 0 && user.portrait.length > 0 && user.portrait === authorPortrait) {
+    return true;
+  }
+  if (authorName.length > 0 && user.name.length > 0 && user.name === authorName) {
+    return true;
+  }
+  return false;
+}
+
 @ReusableV2
 @ComponentV2
 struct PostItem {
   @Require @Param post: PostInfo;
-  // 是否为楼主楼层（用 post.author.uid === thread.author.uid 判断，对齐原 APP，分页后仍正确）
+  // 是否为楼主楼层（用 uid/portrait/name 三重判断，分页后仍正确）
   @Param isAuthor: boolean = false;
+  @Param threadAuthorUid: number = 0;
+  @Param threadAuthorPortrait: string = '';
+  @Param threadAuthorName: string = '';
   // #72 沉浸模式（纯净阅读）：隐藏头像区，仅显示内容+操作按钮
   @Param immersiveMode: boolean = false;
   // #79 图片加载策略：由父组件从 AppStorageV2 传入
@@ -403,7 +420,7 @@ struct PostItem {
     .alignItems(VerticalAlign.Center)
     .margin({ top: marginTop })
     .padding({ left: 12, right: 12, top: 4, bottom: 2 })
-    .hitTestBehavior(HitTestMode.Block)
+    .hitTestBehavior(HitTestMode.Transparent)
     .onClick(() => {
       if (this.onViewReplies) {
         this.onViewReplies();
@@ -649,6 +666,21 @@ struct PostItem {
                 Span(formatTiebaName(subPost.author.nickname, subPost.author.name, this.showUsername) ||
                   SUB_POST_ANONYMOUS_NAME)
                   .fontColor(this.themeState.primary)
+                if (isSameTiebaAuthor(subPost.author, this.threadAuthorUid, this.threadAuthorPortrait,
+                  this.threadAuthorName)) {
+                  Span(' [')
+                    .fontSize(11)
+                    .fontWeight(FontWeight.Medium)
+                    .fontColor(this.themeState.primary)
+                  Span($r('app.string.author_label'))
+                    .fontSize(11)
+                    .fontWeight(FontWeight.Medium)
+                    .fontColor(this.themeState.primary)
+                  Span(']')
+                    .fontSize(11)
+                    .fontWeight(FontWeight.Medium)
+                    .fontColor(this.themeState.primary)
+                }
                 if (subPost.fragments.length > 0) {
                   Span('：')
                     .fontColor($r('app.color.text_primary'))
@@ -685,7 +717,7 @@ struct PostItem {
               .textOverflow({ overflow: TextOverflow.Ellipsis })
               .width('100%')
               .padding({ left: 12, right: 12 })
-              .hitTestBehavior(HitTestMode.Block)
+              .hitTestBehavior(HitTestMode.Transparent)
               .onClick(() => {
                 if (this.onViewReplies) {
                   this.onViewReplies();
@@ -728,10 +760,6 @@ struct PostItem {
     .backgroundColor($r('app.color.android_post_background'))
     .bindContextMenu(this.PostActionsMenu, ResponseType.LongPress)
     .alignItems(HorizontalAlign.Start)
-    .transition(TransitionEffect.OPACITY
-      .combine(TransitionEffect.translate({ y: 20 }))
-      .animation({ duration: 300, curve: Curve.EaseOut }))
-    .renderGroup(true)
   }
 }
 
@@ -1926,7 +1954,8 @@ export struct ThreadPage {
           .maxLines(this.tiebaUsernameState.value ? 2 : 1)
           .textOverflow({ overflow: TextOverflow.Ellipsis })
           .flexShrink(1)
-          if (this.threadAuthor.uid > 0 && reply.author.uid === this.threadAuthor.uid) {
+          if (isSameTiebaAuthor(reply.author, this.threadAuthor.uid, this.threadAuthor.portrait,
+            this.threadAuthor.name)) {
             Text($r('app.string.author_label'))
               .fontSize(9)
               .fontWeight(FontWeight.Medium)
@@ -2056,7 +2085,8 @@ export struct ThreadPage {
             if (floorPost.author.level > 0) {
               ThreadLevelBadge({ level: floorPost.author.level, themeState: this.themeState })
             }
-            if (this.threadAuthor.uid > 0 && floorPost.author.uid === this.threadAuthor.uid) {
+            if (isSameTiebaAuthor(floorPost.author, this.threadAuthor.uid, this.threadAuthor.portrait,
+              this.threadAuthor.name)) {
               Text($r('app.string.author_label'))
                 .fontSize(9)
                 .fontWeight(FontWeight.Medium)
@@ -2216,7 +2246,7 @@ export struct ThreadPage {
       .width('100%')
       .layoutWeight(1)
       .cachedCount(6)
-      .edgeEffect(EdgeEffect.Spring, { alwaysEnabled: false })
+      .edgeEffect(EdgeEffect.Spring, { alwaysEnabled: true })
       .divider({ strokeWidth: 0.5, color: $r('app.color.divider'), startMargin: 4, endMargin: 4 })
       .scrollBar(BarState.Off)
       // 抽屉保持不固定（拉顶部可自由展开/收起）；列表上滑用 SELF_ONLY 避免翻到底后强拉抽屉档位导致卡顿，回顶后下拉仍可顺滑关闭
@@ -2328,7 +2358,11 @@ export struct ThreadPage {
           ListItem() {
             PostItem({
               post: post,
-              isAuthor: this.threadAuthor.uid > 0 && post.author.uid === this.threadAuthor.uid,
+              isAuthor: isSameTiebaAuthor(post.author, this.threadAuthor.uid, this.threadAuthor.portrait,
+                this.threadAuthor.name),
+              threadAuthorUid: this.threadAuthor.uid,
+              threadAuthorPortrait: this.threadAuthor.portrait,
+              threadAuthorName: this.threadAuthor.name,
               immersiveMode: this.isImmersiveMode,
               imageLoadType: this.imageLoadTypeState.value,
               isWifi: this.isWifiState.value,
@@ -2590,7 +2624,7 @@ export struct ThreadPage {
               .padding({ left: 10, right: 10, top: 5, bottom: 5 })
               .borderRadius(999)
               .backgroundColor(this.threadIsAgreed ? this.themeState.primary_light : $r('app.color.input_background'))
-              .hitTestBehavior(HitTestMode.Block)
+              .hitTestBehavior(HitTestMode.Transparent)
               .onClick(() => {
                 this.handleThreadAgree();
               })
@@ -2677,7 +2711,7 @@ export struct ThreadPage {
         .height(44)
         .justifyContent(FlexAlign.Center)
         .alignItems(VerticalAlign.Center)
-        .hitTestBehavior(HitTestMode.Block)
+        .hitTestBehavior(HitTestMode.Transparent)
         .onClick(() => {
           if (!this.isLoadingPrevious) {
             this.loadPreviousPage();
