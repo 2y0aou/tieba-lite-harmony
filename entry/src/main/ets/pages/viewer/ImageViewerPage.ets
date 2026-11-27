@@ -17,7 +17,9 @@ import { common } from '@kit.AbilityKit';
 import { BusinessError } from '@kit.BasicServicesKit';
 import { getResourceString } from '../../utils/ResourceUtil';
 import { getStatusBarHeight } from '../../utils/StatusBarUtil';
-import { detectAnimatedImageExt } from '../../utils/MediaAnimation';
+import { detectAnimatedImageExt, extractBaiduPicHash } from '../../utils/MediaAnimation';
+import { TiebaAPI } from '../../api/TiebaAPI';
+import { MediaInfo, PostInfo } from '../../model/ForumModels';
 import { VibratorUtil } from '../../utils/VibratorUtil';
 import { RouterUtil, ImageViewerNavParams } from '../../utils/RouterUtil';
 import { ImagePreview, PreviewDirection } from '@rv/image-preview';
@@ -71,12 +73,73 @@ export struct ImageViewerPage {
         const maxIdx: number = this.imageUrls.length - 1;
         this.currentIndex = Math.max(0, Math.min(rawIdx, maxIdx));
         this.shareId = params.shareId;
+        if (params.threadId > 0) {
+          this.upgradeOriginImagesFromThread(params.threadId).catch((err: Error) => {
+            Logger.warn(TAG, `[ImageViewer] upgrade origin images failed: ${err.message}`);
+          });
+        }
       }
     }
     try {
       this.statusBarHeight = await getStatusBarHeight(this.getUIContext());
     } catch (err) {
       Logger.warn(TAG, `[ImageViewer] getStatusBarHeight failed: ${(err as Error).message}`);
+    }
+  }
+
+  /**
+   * 瀑布流接口（Personalized/FrsPage）通常只下发带路径签名(tbpicau)的压缩大图，
+   * 后台拉取该帖 1 楼 PbPage 获取官方签名的真 origin_src 无损原图，按图片哈希或下标无缝升级
+   */
+  private async upgradeOriginImagesFromThread(threadId: number): Promise<void> {
+    const result = await TiebaAPI.getPosts({
+      threadId: threadId,
+      page: 1,
+      onlyAuthor: false,
+      sort: 0
+    });
+    if (this.isDestroyed || !result || !result.posts || result.posts.list.length === 0) {
+      return;
+    }
+    let firstPost: PostInfo | null = null;
+    for (let i = 0; i < result.posts.list.length; i++) {
+      if (result.posts.list[i].floor === 1) {
+        firstPost = result.posts.list[i];
+        break;
+      }
+    }
+    if (firstPost === null || firstPost.mediaList.length === 0) {
+      return;
+    }
+    const originByHash: Map<string, string> = new Map();
+    const originList: string[] = [];
+    for (let i = 0; i < firstPost.mediaList.length; i++) {
+      const m: MediaInfo = firstPost.mediaList[i];
+      const bestUrl: string = m.animatedUrl.length > 0 ? m.animatedUrl : m.url;
+      originList.push(bestUrl);
+      const hash: string = extractBaiduPicHash(bestUrl);
+      if (hash.length > 0 && !originByHash.has(hash)) {
+        originByHash.set(hash, bestUrl);
+      }
+    }
+    let changed: boolean = false;
+    const upgraded: string[] = this.imageUrls.slice();
+    for (let i = 0; i < upgraded.length; i++) {
+      const curUrl: string = upgraded[i];
+      const curHash: string = extractBaiduPicHash(curUrl);
+      let nextUrl: string = '';
+      if (curHash.length > 0 && originByHash.has(curHash)) {
+        nextUrl = originByHash.get(curHash) ?? '';
+      } else if (i < originList.length && originList[i].length > 0) {
+        nextUrl = originList[i];
+      }
+      if (nextUrl.length > 0 && nextUrl !== curUrl) {
+        upgraded[i] = nextUrl;
+        changed = true;
+      }
+    }
+    if (changed && !this.isDestroyed) {
+      this.imageUrls = upgraded;
     }
   }
 
@@ -285,16 +348,17 @@ export struct ImageViewerPage {
                 direction: PreviewDirection.Horizontal,
                 onLongPress: () => {
                   VibratorUtil.heavy();
-                  this.handleLongPress(url);
+                  this.handleLongPress(this.imageUrls[index] ?? url);
                 }
               }
             }) {
-              Image(url)
+              Image(this.imageUrls[index] ?? url)
                 .width('100%')
                 .height('100%')
                 .objectFit(ImageFit.Contain)
                 .draggable(false)
                 .syncLoad(false)
+                .autoResize(false)
                 .interpolation(ImageInterpolation.High)
                 .alt($r('app.media.startIcon'))
                 .onError(() => {
@@ -306,7 +370,7 @@ export struct ImageViewerPage {
                 .clip(true)
                 .transition(TransitionEffect.opacity(0.99))
             }
-          }, (url: string, index: number) => `${index}_${url}`)
+          }, (_url: string, index: number) => `${index}`)
         }
         .index(this.currentIndex)
         .indicator(false)

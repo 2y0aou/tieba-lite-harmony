@@ -440,7 +440,10 @@ export struct ForumPage {
                     imageLoadType: this.imageLoadTypeState.value,
                     isWifi: this.isWifiState.value,
                     commentPreviewEnabled: this.commentPreviewState.value,
-                    onCardClick: () => this.navigateToThread(thread.tid),
+                    onCardClick: () => RouterUtil.push(RouterUtil.ROUTE_THREAD_PAGE,
+                      new ThreadNavParams(thread.tid, false, false, thread.title,
+                        thread.forumName.length > 0 ? thread.forumName : this.forumName,
+                        thread.forumInfo.avatar.length > 0 ? thread.forumInfo.avatar : this.forumAvatar)),
                           onSubPostClick: (subPost: SubPostInfo) => this.navigateToSubPosts(subPost),
                     onAuthorClick: () => this.navigateToUserProfile(
                       thread.author.portrait,

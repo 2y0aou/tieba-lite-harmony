@@ -43,15 +43,28 @@ export function resolveAnimatedImageUrl(dynamicUrl: string, originalUrl: string,
   return isGifImageUrl(activeUrl) ? activeUrl : '';
 }
 
+/** 提取百度贴吧图床 URL 中的图片哈希（用于瀑布流缩略图与帖子真原图精准配对） */
+export function extractBaiduPicHash(url: string): string {
+  if (url.length === 0) {
+    return '';
+  }
+  const noQuery: string = url.split(/[?#]/, 1)[0];
+  const match: RegExpMatchArray | null = noQuery.match(/\/([a-f0-9]{32,})\.(?:jpg|jpeg|png|webp|gif)$/i);
+  if (match && match.length >= 2) {
+    return match[1].toLowerCase();
+  }
+  return '';
+}
+
 /**
- * 将瀑布流/吧列表中的贴吧低清缩略图/裁切图（w%3D580、wh%3D、abpic、crop 等）
- * 还原为百度图床无损原图直链，供大图查看器高清展示（配合 fallbackUrls 失败自动回退）
+ * 将无鉴权老图床压缩图尝试还原为原图直链；
+ * 若原链自带 tbpicau 路径签名参数，修改路径会导致 CDN 验签 403，此时应保留原链并交由 PbPage 拉取官方签名的 origin_src
  */
 export function resolveHighResImageUrl(url: string): string {
   if (url.length === 0 || isGifImageUrl(url)) {
     return url;
   }
-  if (/\/forum\/pic\/item\//i.test(url)) {
+  if (/\/forum\/pic\/item\//i.test(url) || /[?&]tbpicau=/i.test(url)) {
     return url;
   }
   if (!/(?:tiebapic|imgsa|imgsrc|hiphotos)\.baidu\.com/i.test(url)) {
@@ -64,7 +77,5 @@ export function resolveHighResImageUrl(url: string): string {
   }
   const hash: string = match[1];
   const ext: string = match[2].toLowerCase();
-  const qIndex: number = url.indexOf('?');
-  const query: string = qIndex >= 0 ? url.slice(qIndex) : '';
-  return `https://tiebapic.baidu.com/forum/pic/item/${hash}.${ext}${query}`;
+  return `https://tiebapic.baidu.com/forum/pic/item/${hash}.${ext}`;
 }

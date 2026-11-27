@@ -25,11 +25,19 @@ export class ThreadNavParams {
   tid: number;
   seeLz: boolean;
   jumpToReplies: boolean;
+  // 列表预填元数据：进帖 0ms 秒显标题与顶栏贴吧胶囊，避免等待网络返回前白屏或重复查吧头像
+  title: string;
+  forumName: string;
+  forumAvatar: string;
 
-  constructor(tid: number, seeLz: boolean = false, jumpToReplies: boolean = false) {
+  constructor(tid: number, seeLz: boolean = false, jumpToReplies: boolean = false,
+    title: string = '', forumName: string = '', forumAvatar: string = '') {
     this.tid = tid;
     this.seeLz = seeLz;
     this.jumpToReplies = jumpToReplies;
+    this.title = title;
+    this.forumName = forumName;
+    this.forumAvatar = forumAvatar;
   }
 }
 
@@ -118,12 +126,16 @@ export class ImageViewerNavParams {
   index: number;
   shareId: string;
   fallbackUrls: string[];
+  // 瀑布流点图传入所属 tid：查看器后台拉取 1 楼 PbPage，自动将压缩图无缝升级为带有效签名的官方 origin_src 原图
+  threadId: number;
 
-  constructor(urls: string[], index: number = 0, shareId: string = '', fallbackUrls: string[] = []) {
+  constructor(urls: string[], index: number = 0, shareId: string = '',
+    fallbackUrls: string[] = [], threadId: number = 0) {
     this.urls = urls;
     this.index = index;
     this.shareId = shareId;
     this.fallbackUrls = fallbackUrls;
+    this.threadId = threadId;
   }
 }
 

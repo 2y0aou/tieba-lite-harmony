@@ -360,7 +360,8 @@ struct ConcernTab {
               imageLoadType: this.imageLoadTypeState.value,
               isWifi: this.isWifiState.value,
               commentPreviewEnabled: this.commentPreviewState.value,
-              onCardClick: () => this.navigateToThread(thread.tid),
+              onCardClick: () => RouterUtil.push(RouterUtil.ROUTE_THREAD_PAGE,
+                new ThreadNavParams(thread.tid, false, false, thread.title, thread.forumName, thread.forumInfo.avatar)),
               onAuthorClick: () => this.navigateToUserProfile(
                 thread.author.portrait,
                 thread.author.name,
@@ -382,7 +383,8 @@ struct ConcernTab {
                   Logger.error(TAG, `[ConcernTab] handleBlockForum failed: ${err.message}`);
                 });
               },
-              onCommentClick: () => RouterUtil.push(RouterUtil.ROUTE_THREAD_PAGE, new ThreadNavParams(thread.tid, false, true))
+              onCommentClick: () => RouterUtil.push(RouterUtil.ROUTE_THREAD_PAGE,
+                new ThreadNavParams(thread.tid, false, true, thread.title, thread.forumName, thread.forumInfo.avatar))
             })
           }
         }, (thread: ThreadInfo, index: number) => `${thread.tid}`)
@@ -600,7 +602,8 @@ struct PersonalizedTab {
               imageLoadType: this.imageLoadTypeState.value,
               isWifi: this.isWifiState.value,
               commentPreviewEnabled: this.commentPreviewState.value,
-              onCardClick: () => this.navigateToThread(thread.tid),
+              onCardClick: () => RouterUtil.push(RouterUtil.ROUTE_THREAD_PAGE,
+                new ThreadNavParams(thread.tid, false, false, thread.title, thread.forumName, thread.forumInfo.avatar)),
               onAuthorClick: () => this.navigateToUserProfile(
                 thread.author.portrait,
                 thread.author.name,
@@ -622,7 +625,8 @@ struct PersonalizedTab {
                   Logger.error(TAG, `[PersonalizedTab] handleBlockForum failed: ${err.message}`);
                 });
               },
-              onCommentClick: () => RouterUtil.push(RouterUtil.ROUTE_THREAD_PAGE, new ThreadNavParams(thread.tid, false, true))
+              onCommentClick: () => RouterUtil.push(RouterUtil.ROUTE_THREAD_PAGE,
+                new ThreadNavParams(thread.tid, false, true, thread.title, thread.forumName, thread.forumInfo.avatar))
             })
           }
         }, (thread: ThreadInfo, index: number) => `${thread.tid}`)
@@ -882,7 +886,8 @@ struct HotTab {
                 imageLoadType: this.imageLoadTypeState.value,
                 isWifi: this.isWifiState.value,
                 commentPreviewEnabled: this.commentPreviewState.value,
-                onCardClick: () => this.navigateToThread(thread.tid),
+                onCardClick: () => RouterUtil.push(RouterUtil.ROUTE_THREAD_PAGE,
+                new ThreadNavParams(thread.tid, false, false, thread.title, thread.forumName, thread.forumInfo.avatar)),
                 onAuthorClick: () => this.navigateToUserProfile(
                   thread.author.portrait,
                   thread.author.name,
@@ -899,7 +904,8 @@ struct HotTab {
                     Logger.error(TAG, `[HotTab] handleDisagree failed: ${err.message}`);
                   });
                 },
-                onCommentClick: () => RouterUtil.push(RouterUtil.ROUTE_THREAD_PAGE, new ThreadNavParams(thread.tid, false, true))
+                onCommentClick: () => RouterUtil.push(RouterUtil.ROUTE_THREAD_PAGE,
+                new ThreadNavParams(thread.tid, false, true, thread.title, thread.forumName, thread.forumInfo.avatar))
               })
               // 排名 + 热度信息（位于卡片下方右侧，对齐原 app FeedCard dislikeAction 槽位）
               Row() {

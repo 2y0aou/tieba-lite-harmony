@@ -370,6 +370,8 @@ struct PostItem {
   @Require @Param themeState: ThemeState;
   @Param commentPreviewEnabled: boolean = true;
   @Param showUsername: boolean = false;
+  // 区分主帖页与纯评论页的转场命名空间，避免双 Tab 共享元素 ID 冲突
+  @Param tabScope: string = 'main';
 
   // Toast 提示 helper（API 12+ 推荐用 UIContext.getPromptAction() 替代全局 promptAction）
   private showToast(message: string): void {
@@ -381,7 +383,7 @@ struct PostItem {
   MediaImage(media: MediaInfo, index: number) {
     InlinePostImage({
       media: media,
-      shareId: `post_${this.post.tid}_${this.post.pid}_${index}`,
+      shareId: `${this.tabScope}_post_${this.post.tid}_${this.post.pid}_${index}`,
       imageLoadType: this.imageLoadType,
       isWifi: this.isWifi,
       onOpen: () => this.openPostImageViewer(index)
@@ -390,12 +392,12 @@ struct PostItem {
 
   /**
    * #132 打开图片查看器（PostItem 楼层图片共享元素转场）
-   * shareId 用 tid+pid+index 确保同一帖子不同楼层图片不冲突
+   * shareId 用 tabScope+tid+pid+index 确保同一帖子不同楼层/双 Tab 图片不冲突
    * 用 RouterUtil.pushWithTransition 跳转，animateTo + pushPathByName(false) 禁用系统转场
    */
   private openPostImageViewer(index: number): void {
     const urls: string[] = this.post.mediaList.map((m: MediaInfo) => m.animatedUrl.length > 0 ? m.animatedUrl : m.url);
-    const shareId: string = `post_${this.post.tid}_${this.post.pid}_${index}`;
+    const shareId: string = `${this.tabScope}_post_${this.post.tid}_${this.post.pid}_${index}`;
     RouterUtil.pushWithTransition(
       RouterUtil.ROUTE_IMAGE_VIEWER_PAGE,
       new ImageViewerNavParams(urls, index, shareId),
@@ -797,8 +799,11 @@ export struct ThreadPage {
   // 避免页面销毁后修改 @Local 触发警告或操作已销毁的 dataSource
   private isDestroyed: boolean = false;
   private hasRecordedHistory: boolean = false;
-  // 当前激活内容页签：0=正文，1=评论
+  // 当前激活内容页签：0=正文+评论完整流，1=纯评论直达页
   @Local activeTab: number = 0;
+  // 纯评论页懒挂载标志：进帖首帧不重复构建第二套 LazyForEach，待首帧空闲或用户开始左滑时挂载
+  @Local replyTabMounted: boolean = false;
+  private replyTabWarmupTimer: number = -1;
 
   @Local tid: number = 0;
   private floorRepliesByPid: Map<number, FloorRepliesState> = new Map();
@@ -891,6 +896,17 @@ export struct ThreadPage {
           }
           if (params.jumpToReplies === true) {
             this.activeTab = 1;
+            this.replyTabMounted = true;
+          }
+          // 列表预填元数据：进帖 0ms 立即展示标题与贴吧胶囊，且复用已有吧头像省掉额外网络查询
+          if (params.title && params.title.length > 0) {
+            this.threadTitle = params.title;
+          }
+          if (params.forumName && params.forumName.length > 0) {
+            this.threadForumName = params.forumName;
+          }
+          if (params.forumAvatar && params.forumAvatar.length > 0) {
+            this.forumAvatar = params.forumAvatar;
           }
         } else {
           Logger.error(TAG, `[ThreadPage] invalid tid from params: ${params.tid}`);
@@ -928,18 +944,53 @@ export struct ThreadPage {
       Logger.warn(TAG, `[ThreadPage] loadPosts skipped: tid not ready (tid=${this.viewModel.getTid()})`);
       return;
     }
-    await this.viewModel.loadData(isRefresh);
+    // 立即置 loading 态，避免网络等待期间闪现空态或假死体感
+    this.isLoading = true;
+    if (isRefresh) {
+      this.errorMessage = '';
+    }
+    try {
+      await this.viewModel.loadData(isRefresh);
+    } finally {
+      if (!this.isDestroyed) {
+        this.isLoading = this.viewModel.loadingState.isLoading;
+      }
+    }
     // 页面可能在 await 期间销毁，检查标志位避免修改已销毁组件的 @State
     if (this.isDestroyed) {
       return;
     }
     this.syncState();
+    this.scheduleReplyTabWarmup();
     if (this.forumAvatar.length === 0 && !this.hasCheckedForumAvatar && this.threadForumName.length > 0) {
       this.hasCheckedForumAvatar = true;
       this.checkForumAvatar().catch((err: Error) => {
         Logger.error(TAG, `[ThreadPage] checkForumAvatar failed: ${err.message}`);
       });
     }
+  }
+
+  /** 首帧渲染落稳后后台空闲预热 Tab 1，确保进帖 0 双倍开销且后续左滑丝滑不白屏 */
+  private ensureReplyTabMounted(): void {
+    if (this.replyTabWarmupTimer >= 0) {
+      clearTimeout(this.replyTabWarmupTimer);
+      this.replyTabWarmupTimer = -1;
+    }
+    if (!this.replyTabMounted) {
+      this.replyTabMounted = true;
+    }
+  }
+
+  private scheduleReplyTabWarmup(): void {
+    if (this.replyTabMounted || this.replyTabWarmupTimer >= 0 || this.isDestroyed) {
+      return;
+    }
+    this.replyTabWarmupTimer = setTimeout(() => {
+      this.replyTabWarmupTimer = -1;
+      if (!this.isDestroyed && !this.replyTabMounted) {
+        this.replyTabMounted = true;
+      }
+    }, 550);
   }
 
   /**
@@ -993,8 +1044,12 @@ export struct ThreadPage {
     if (this.viewModel.lastOpWasRefresh) {
       this.threadAgreeNum = this.viewModel.threadAgreeNum;
       this.threadIsAgreed = this.viewModel.threadIsAgreed;
-      this.threadForumName = this.viewModel.threadForumName;
-      this.forumAvatar = this.viewModel.forumAvatar;
+      if (this.viewModel.threadForumName.length > 0) {
+        this.threadForumName = this.viewModel.threadForumName;
+      }
+      if (this.viewModel.forumAvatar.length > 0) {
+        this.forumAvatar = this.viewModel.forumAvatar;
+      }
       this.threadViewNum = this.viewModel.threadViewNum;
       this.threadCreateTime = this.viewModel.threadCreateTime;
     }
@@ -1031,6 +1086,9 @@ export struct ThreadPage {
   /** 小黑盒式「正文 / 评论」双页签切换（原生 Tabs 动画联动） */
   private switchContentTab(tabIndex: number, withHaptic: boolean = true): void {
     const target: number = tabIndex === 1 ? 1 : 0;
+    if (target === 1) {
+      this.ensureReplyTabMounted();
+    }
     if (this.activeTab === target) {
       return;
     }
@@ -1993,6 +2051,10 @@ export struct ThreadPage {
       clearTimeout(this.replyFocusTimer);
       this.replyFocusTimer = -1;
     }
+    if (this.replyTabWarmupTimer >= 0) {
+      clearTimeout(this.replyTabWarmupTimer);
+      this.replyTabWarmupTimer = -1;
+    }
     // #API26 注销碰一碰分享监听，避免页面销毁后仍可触发跨端分享
     unregisterKnockShare();
     // #203 清理 ViewModel 持有的 DataSource 引用，防止 ViewModel 被全局缓存时引用泄漏
@@ -2467,6 +2529,7 @@ export struct ThreadPage {
               themeState: this.themeState,
               commentPreviewEnabled: this.commentPreviewState.value,
               showUsername: this.tiebaUsernameState.value,
+              tabScope: keyPrefix,
               onAgreeClick: (p: PostInfo) => {
                 this.handleAgree(p).catch((err: Error) => {
                   Logger.error(TAG, `[ThreadPage] handleAgree failed: ${err.message}`);
@@ -2527,39 +2590,37 @@ export struct ThreadPage {
         .divider({ strokeWidth: 0 })
         .scrollBar(BarState.Off)
         .edgeEffect(EdgeEffect.Spring, { alwaysEnabled: true })
-        .cachedCount(6, true)
+        .cachedCount(3, true)
         .clip(false)
         .backgroundColor($r('app.color.android_post_background'))
-        .onScrollIndex((_start: number, end: number) => {
-          if (this.postCount > 0 && end >= this.postCount - 4 && this.hasMore && !this.isLoading) {
-            this.onReachEnd();
-          }
-        })
         .onReachEnd(() => this.onReachEnd())
       }
       .tabBar('')
       .clip(false)
 
-      // Tab 1：左滑直达的纯净评论页
+      // Tab 1：左滑直达的纯净评论页（首帧懒挂载，不阻塞进帖；空闲 550ms 或开始左滑时自动挂载）
       TabContent() {
-        List({ scroller: this.scroller }) {
-          this.ReplyListGroup('reply')
+        Stack() {
+          if (this.replyTabMounted) {
+            List({ scroller: this.scroller }) {
+              this.ReplyListGroup('reply')
+            }
+            .width('100%')
+            .height('100%')
+            .divider({ strokeWidth: 0 })
+            .scrollBar(BarState.Off)
+            .edgeEffect(EdgeEffect.Spring, { alwaysEnabled: true })
+            .cachedCount(2, true)
+            // #194 clip(false) + cachedCount(_, true) 让内容穿透到 titleBar 下方做模糊（对齐 HomePage 混合式）
+            .clip(false)
+            .backgroundColor($r('app.color.android_post_background'))
+            .onReachEnd(() => this.onReachEnd())
+          }
         }
         .width('100%')
         .height('100%')
-        .divider({ strokeWidth: 0 })
-        .scrollBar(BarState.Off)
-        .edgeEffect(EdgeEffect.Spring, { alwaysEnabled: true })
-        .cachedCount(8, true)
-        // #194 clip(false) + cachedCount(_, true) 让内容穿透到 titleBar 下方做模糊（对齐 HomePage 混合式）
         .clip(false)
         .backgroundColor($r('app.color.android_post_background'))
-        .onScrollIndex((_start: number, end: number) => {
-          if (this.postCount > 0 && end >= this.postCount - 4 && this.hasMore && !this.isLoading) {
-            this.onReachEnd();
-          }
-        })
-        .onReachEnd(() => this.onReachEnd())
       }
       .tabBar('')
       .clip(false)
@@ -2571,7 +2632,18 @@ export struct ThreadPage {
     .layoutWeight(1)
     .clip(false)
     .backgroundColor($r('app.color.android_post_background'))
+    .onGestureSwipe(() => {
+      this.ensureReplyTabMounted();
+    })
+    .onAnimationStart((_index: number, targetIndex: number) => {
+      if (targetIndex === 1) {
+        this.ensureReplyTabMounted();
+      }
+    })
     .onChange((index: number) => {
+      if (index === 1) {
+        this.ensureReplyTabMounted();
+      }
       this.activeTab = index;
     })
     .bindSheet($$this.showCommentsDrawer, this.CommentsDrawer(), {

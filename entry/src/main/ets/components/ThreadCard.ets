@@ -270,7 +270,7 @@ export struct ThreadCard {
 
   /**
    * #132 打开图片查看器（共享元素转场）
-   * 优先将瀑布流缩略图/裁切图升级为贴吧无损原图直链，并携带原始 URL 作为加载失败自动回退
+   * 先传当前可用大图秒开，同时携带 thread.tid 让查看器后台自动从 PbPage 拉取带有效签名的官方 origin_src 无损原图并无缝升级
    */
   private openImageViewer(index: number): void {
     const fallbackUrls: string[] = this.thread.mediaList.map((m: MediaInfo) =>
@@ -280,7 +280,7 @@ export struct ThreadCard {
     const shareId: string = `card_${this.thread.tid}_${index}`;
     RouterUtil.pushWithTransition(
       RouterUtil.ROUTE_IMAGE_VIEWER_PAGE,
-      new ImageViewerNavParams(highResUrls, index, shareId, fallbackUrls),
+      new ImageViewerNavParams(highResUrls, index, shareId, fallbackUrls, this.thread.tid),
       this.getUIContext()
     );
   }
