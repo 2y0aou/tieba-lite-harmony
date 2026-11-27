@@ -17,7 +17,7 @@ export interface RelativeTimeBucket {
 
 /**
  * 相对时间分级纯函数（阈值判断与数值计算，独立于时钟与 UI 资源）
- * 阈值：<60s 刚刚 / <3600s 分钟 / <86400s 小时 / <604800s 天 / 否则绝对日期
+ * 阈值：<60s 刚刚 / <3600s 分钟前 / <86400s(1天内) 小时前 / >=86400s(1天外) 准确时间
  *
  * @param timestamp Unix 时间戳（秒）
  * @param nowSec 当前时间（秒），由调用方注入
@@ -31,14 +31,29 @@ export function relativeTimeBucket(timestamp: number, nowSec: number): RelativeT
     return { kind: 'minutes', value: Math.floor(diff / 60) };
   } else if (diff < 86400) {
     return { kind: 'hours', value: Math.floor(diff / 3600) };
-  } else if (diff < 604800) {
-    return { kind: 'days', value: Math.floor(diff / 86400) };
   }
   return { kind: 'date' };
 }
 
 /**
- * 格式化相对时间
+ * 格式化准确时间（1天外使用）：
+ * 同年显示 MM-DD HH:mm，跨年显示 YYYY-MM-DD HH:mm
+ */
+function formatExactDateTime(timestamp: number, nowMs: number): string {
+  const date: Date = new Date(timestamp * 1000);
+  const nowDate: Date = new Date(nowMs);
+  const month: string = (date.getMonth() + 1).toString().padStart(2, '0');
+  const day: string = date.getDate().toString().padStart(2, '0');
+  const hours: string = date.getHours().toString().padStart(2, '0');
+  const minutes: string = date.getMinutes().toString().padStart(2, '0');
+  if (date.getFullYear() === nowDate.getFullYear()) {
+    return `${month}-${day} ${hours}:${minutes}`;
+  }
+  return `${date.getFullYear()}-${month}-${day} ${hours}:${minutes}`;
+}
+
+/**
+ * 格式化相对时间（1天内显示刚刚/分钟前/小时前，超过1天显示准确时间）
  * 必须在组件 build() 或生命周期内调用（依赖 getContext() 解析 $r 资源）
  *
  * @param timestamp Unix 时间戳（秒）
@@ -51,7 +66,8 @@ export function formatRelativeTime(timestamp: number): string {
     return '';
   }
 
-  const bucket: RelativeTimeBucket = relativeTimeBucket(timestamp, Date.now() / 1000);
+  const nowMs: number = Date.now();
+  const bucket: RelativeTimeBucket = relativeTimeBucket(timestamp, nowMs / 1000);
   switch (bucket.kind) {
     case 'now':
       return getResourceString($r('app.string.just_now'));
@@ -61,10 +77,7 @@ export function formatRelativeTime(timestamp: number): string {
     case 'hours':
       return (bucket.value ?? 0) + getResourceString($r('app.string.hours_ago'));
     case 'days':
-      return (bucket.value ?? 0) + getResourceString($r('app.string.days_ago'));
-    case 'date': {
-      const date = new Date(timestamp * 1000);
-      return `${date.getFullYear()}-${(date.getMonth() + 1).toString().padStart(2, '0')}-${date.getDate().toString().padStart(2, '0')}`;
-    }
+    case 'date':
+      return formatExactDateTime(timestamp, nowMs);
   }
 }
